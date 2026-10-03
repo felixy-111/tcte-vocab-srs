@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<rect width="512" height="512" fill="#1F3A5F"/>
+<rect x="96" y="120" width="320" height="272" rx="28" fill="#fff"/>
+<rect x="96" y="120" width="320" height="64" rx="28" fill="#4A7BC8"/>
+<rect x="96" y="160" width="320" height="24" fill="#4A7BC8"/>
+<text x="256" y="320" font-family="Georgia, serif" font-size="140" font-weight="700" fill="#1F3A5F" text-anchor="middle">Aa</text>
+<rect x="176" y="346" width="160" height="10" rx="5" fill="#C0392B"/>
+</svg>

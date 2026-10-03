@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1F3A5F">
+<!-- 只准連自己網域＋這個 Supabase 專案（換專案要一起改這行）；擋掉萬一被注入的程式把老師登入資訊送到別處 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self' https://knsdpvmhloobfduhfwyk.supabase.co; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="apple-mobile-web-app-title" content="統測單字">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>統測單字</title>
+<style>
+  :root{
+    --navy:#1F3A5F; --blue:#4A7BC8; --red:#C0392B; --bg:#ECF3FB;
+    --green:#27AE60; --amber:#E6A700; --mut:#7a8a9c;
+    --safe-top:env(safe-area-inset-top,0px); --safe-bot:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; min-height:100%;}
+  body{font-family:"PingFang TC","Heiti TC","Microsoft JhengHei",system-ui,sans-serif;
+    background:#F4F8FD; color:#2C3E50; -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column;}
+  header{background:var(--navy); color:#fff; padding:calc(12px + var(--safe-top)) 16px 12px; position:sticky; top:0; z-index:10;}
+  header .row{display:flex; align-items:center; gap:10px;}
+  header h1{margin:0; font-size:18px; letter-spacing:1px; flex:1;}
+  header .back{background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:8px; font-size:14px; padding:8px 12px; cursor:pointer;}
+  header .sub{font-size:12px; color:#C8D6E5; margin-top:4px; min-height:15px;}
+  .topbar{height:6px; background:rgba(255,255,255,.18); border-radius:4px; overflow:hidden; margin-top:8px;}
+  .topbar>div{height:100%; background:#7FD3A0; width:0%; transition:width .3s;}
+  main{flex:1; padding:14px 14px calc(24px + var(--safe-bot));}
+  .card{background:#fff; border-radius:16px; padding:16px; box-shadow:0 3px 12px rgba(31,58,95,.09); margin-bottom:12px;}
+  .lbl{font-size:12px; color:var(--blue); font-weight:700; letter-spacing:1px; margin-bottom:6px;}
+  .mut{color:var(--mut);} .small{font-size:12px;}
+  .big{font-size:15px; color:var(--navy); font-weight:700;}
+  .btn{display:block; width:100%; font-size:17px; font-weight:700; padding:15px; border:none; background:var(--navy);
+    color:#fff; border-radius:14px; cursor:pointer; min-height:54px; font-family:inherit;}
+  .btn:active{transform:scale(.98);} .btn:disabled{background:#B7C4D6;}
+  .btn.blue{background:var(--blue);} .btn.red{background:var(--red);}
+  .btn.ghost{background:#fff; color:var(--navy); border:2px solid #D5E0EE;}
+  .btn .s{display:block; font-size:12px; font-weight:500; opacity:.85; margin-top:3px;}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .stat{display:flex; justify-content:space-around; text-align:center; font-size:12px; color:#5a6b7d;}
+  .stat b{display:block; font-size:18px; color:var(--navy);}
+  .tag{display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:2px 8px; background:#EEF4FC; color:var(--blue); margin-right:6px;}
+  .tag.red{background:#FCE8E8; color:var(--red);} .tag.green{background:#E5F6EC; color:var(--green);}
+  /* 卡片 */
+  .q{background:#fff; border-radius:18px; padding:20px 16px; box-shadow:0 4px 14px rgba(31,58,95,.10);}
+  .word{font-size:36px; font-weight:800; color:var(--navy); text-align:center; line-height:1.15; word-break:break-word;}
+  .zhbig{font-size:26px; font-weight:800; color:var(--navy); text-align:center; line-height:1.3;}
+  .pos{text-align:center; color:var(--mut); font-size:14px; margin-top:4px;}
+  .pic{text-align:center; margin:8px 0 2px;} .pic img{height:96px;} .pic .emo{font-size:52px; line-height:1.1;}
+  .play{display:inline-flex; align-items:center; gap:6px; min-height:40px; min-width:40px; border:1px solid #C9D6E6; background:#F8FBFF; color:var(--blue);
+    border-radius:20px; padding:6px 12px; font-size:13px; cursor:pointer; font-family:inherit;}
+  .play svg{width:16px; height:16px;}
+  .center{text-align:center;} .mt{margin-top:12px;}
+  .opts{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px;}
+  .opt{font-size:16px; font-weight:600; padding:14px 6px; border:2px solid #D5E0EE; background:#fff; border-radius:12px;
+    cursor:pointer; color:var(--navy); min-height:58px; font-family:inherit; line-height:1.3;}
+  .opt.correct{background:#E5F6EC; border-color:var(--green); color:var(--green);}
+  .opt.wrong{background:#FCE8E8; border-color:var(--red); color:var(--red);}
+  .hint{text-align:center; font-family:Menlo,monospace; font-size:20px; letter-spacing:3px; color:var(--blue); margin:14px 0 4px;}
+  .tinput{width:100%; font-size:22px; font-weight:600; padding:13px 12px; border:2px solid #D5E0EE; border-radius:12px;
+    color:var(--navy); text-align:center; outline:none; font-family:inherit;}
+  .tinput:focus{border-color:var(--blue); background:#F8FBFF;}
+  .tinput.correct{border-color:var(--green); background:#E5F6EC; color:var(--green);}
+  .tinput.wrong{border-color:var(--red); background:#FCE8E8; color:var(--red);}
+  .colls{margin-top:12px; font-size:14px;}
+  .colls div{padding:6px 10px; background:var(--bg); border-radius:8px; margin-top:6px;}
+  .colls b{color:var(--red);}
+  .sent{padding:10px 12px; background:var(--bg); border-radius:10px; margin-top:8px; font-size:15px; line-height:1.5; cursor:pointer;}
+  .sent .zh{font-size:13px; color:#5a6b7d;} .sent b{color:var(--red);}
+  .fb{margin-top:14px; padding:12px; border-radius:12px; font-size:15px;}
+  .fb.ok{background:#E5F6EC; color:#1e7d46;} .fb.no{background:#FCE8E8; color:var(--red);}
+  .fb .ans{font-size:22px; font-weight:800; color:var(--navy);}
+  .deriv{font-size:14px; margin-top:10px; color:#46586b;}
+  .reading{font-size:17px; line-height:1.8; color:#2C3E50;}
+  .reading .w{color:var(--red); font-weight:700; border-bottom:1px dashed var(--red); cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:calc(24px + var(--safe-bot)); transform:translateX(-50%); background:var(--navy);
+    color:#fff; padding:10px 16px; border-radius:10px; font-size:15px; z-index:20; max-width:90%;}
+  .bank{display:flex; align-items:center; gap:10px; padding:10px 4px; border-bottom:1px solid #EEF2F7; font-size:15px;}
+  .bank input{width:20px; height:20px;}
+  .bank .r{margin-left:auto; font-size:12px; color:var(--mut);}
+  .list a{display:flex; justify-content:space-between; padding:12px 4px; border-bottom:1px solid #EEF2F7; color:var(--navy); text-decoration:none; font-size:15px;}
+  .list a.lock{color:#9fb2c8; pointer-events:none;}
+  .grade{display:inline-block; font-size:14px; font-weight:700; border-radius:8px; padding:4px 10px;}
+  .grade.g3{background:#E5F6EC; color:var(--green);} .grade.g2{background:#FFF4D6; color:#9A6B00;} .grade.g1{background:#FCE8E8; color:var(--red);}
+  .formtag{display:table; font-size:11px; color:var(--blue); background:#fff; border:1px solid #C9D6E6; border-radius:6px; padding:1px 6px; margin-bottom:4px;}
+  .copy{display:flex; flex-direction:column; gap:8px; margin-top:10px;}
+  .copy .tinput{font-size:18px; padding:10px;}
+  .done{text-align:center; padding:8px 0;} .done .big{font-size:20px;}
+  pre{white-space:pre-wrap; font-size:12px; background:#fff; padding:12px; border-radius:10px;}
+  footer{text-align:center; font-size:11px; color:#9fb2c8; padding:10px;}
+  footer a{color:#9fb2c8;} #syncSt.act{text-decoration:underline; cursor:pointer;}
+  /* 老師端 */
+  .cal{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; text-align:center;}
+  .cal div{border-radius:8px; padding:5px 2px; font-size:11px; background:#F1F4F8; color:#7a8a9c; line-height:1.35;}
+  .cal div b{display:block; font-size:13px;}
+  .cal .ok{background:#E5F6EC; color:#1e7d46;} .cal .part{background:#FFF4D6; color:#9A6B00;}
+  .cal .td{outline:2px solid var(--navy);}
+  table.t{width:100%; border-collapse:collapse; font-size:13px;}
+  table.t th{font-size:11px; color:var(--mut); font-weight:600; text-align:left; padding:4px 3px; border-bottom:1px solid #E3EAF3;}
+  table.t td{padding:6px 3px; border-bottom:1px solid #EEF2F7; vertical-align:top;}
+  table.t td.n, table.t th.n{text-align:right; white-space:nowrap;}
+  .bar{height:8px; background:#E3EAF3; border-radius:4px; overflow:hidden; margin-top:3px;}
+  .bar>div{height:100%; background:var(--blue);}
+  .lnk{width:100%; font-size:13px; padding:10px; border:2px solid #D5E0EE; border-radius:10px; font-family:Menlo,monospace; color:var(--navy);}
+  .warn{background:#FCE8E8; color:var(--red); border-radius:10px; padding:10px 12px; font-size:13px; margin-top:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="row"><button class="back" id="back" hidden>返回</button><h1 id="title">統測單字</h1></div>
+    <div class="sub" id="sub"></div>
+    <div class="topbar" id="topbar" hidden><div id="topfill"></div></div>
+  </header>
+  <main id="main"><div class="card mut">載入中…</div></main>
+  <footer><span id="syncSt">進度存在這台裝置</span> ‧ 圖：ARASAAC (CC BY-NC-SA)<span id="tlink"></span></footer>
+</div>
+<audio id="au" preload="none"></audio>
+<script>
+"use strict";
+/* ============================================================
+   常數
+   ============================================================ */
+const STORE_KEY = "tsvt-srs-v2";
+const EXAM_DATE = "2027-04-24";      // 統測日期（簡章公告後改這裡）
+const SWEEP_DAYS = 42;               // 考前 6 週：每張卡至少到期一次
+const MAX_IVL = 45;                  // 最大間隔（天）
+const RETENTION = 0.9;
+const STEPS = [1, 10];               // 新字當天的學習步驟（分）：拼對一次 → 10 分後再拼對一次才算過
+const RELEARN = [1];                 // 舊字拼錯：1 分後再拼對一次
+const MIN_GAP = 3;                   // 拼錯的卡至少隔幾張才再出
+const GOOD_MS = 20000;               // 20 秒內拼對＝良好，超過＝困難
+const BUDGET_SEC = 1200;             // 每日份量（約 20 分鐘）；本批強制練習不受此限
+const FIRST_CHECK_PER_DAY = 20;      // 舊字首次檢測每天幾項
+const BACKLOG_PAUSE = 30;            // 積欠的到期複習超過幾張就暫停當天的舊字首檢
+const BOOST_EVERY = 4;               // 同一字今天錯滿 4 次 → 加強卡
+const COST = { input: 25, recog: 6, recall: 15, boost: 40 };   // 估計秒數
+const MIN = 60e3, HOUR = 3600e3, DAY = 86400e3;
+// FSRS-5 預設參數
+const W = [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575, 0.1192, 1.01925,
+           1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621];
+const DECAY = -0.5, FACTOR = 19 / 81;
+
+/* ============================================================
+   時間（台北時間、凌晨 4 點換日）
+   ============================================================ */
+const qs = new URLSearchParams(location.search);
+let clockOffset = 0;
+const clock = { t: null };           // selftest 用假時鐘
+const now = () => clock.t != null ? clock.t : Date.now() + clockOffset;
+if (qs.get("today") && /^\d{4}-\d{2}-\d{2}$/.test(qs.get("today"))) {
+  clockOffset = Date.parse(qs.get("today") + "T19:00:00+08:00") - Date.now();
+}
+const dayOf = (t) => new Date(t + 4 * HOUR).toISOString().slice(0, 10);   // +8 -4
+const dayStart = (d) => Date.parse(d + "T04:00:00+08:00");
+const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * DAY).toISOString().slice(0, 10);
+const daysBetween = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / DAY);
+const WK = "日一二三四五六";
+const fmtDay = (d) => `${+d.slice(5, 7)}/${+d.slice(8)}（${WK[new Date(d + "T00:00:00Z").getUTCDay()]}）`;
+const SWEEP_START = addDays(EXAM_DATE, -SWEEP_DAYS);
+
+/* ============================================================
+   FSRS（每個字一張長期卡＝中→英拼寫；只吃當天第一次作答）
+   ============================================================ */
+const clampD = (d) => Math.min(10, Math.max(1, d));
+const fsrs = {
+  R: (t, s) => Math.pow(1 + FACTOR * t / s, DECAY),
+  ivl: (s) => s / FACTOR * (Math.pow(RETENTION, 1 / DECAY) - 1),
+  initS: (g) => Math.max(W[g - 1], 0.1),
+  initD: (g) => clampD(W[4] - Math.exp(W[5] * (g - 1)) + 1),
+  nextD: (d, g) => clampD(W[7] * fsrs.initD(4) + (1 - W[7]) * (d - W[6] * (g - 3) * (10 - d) / 9)),
+  recallS: (d, s, r, g) => s * (1 + Math.exp(W[8]) * (11 - d) * Math.pow(s, -W[9]) * (Math.exp((1 - r) * W[10]) - 1) *
+    (g === 2 ? W[15] : 1) * (g === 4 ? W[16] : 1)),
+  forgetS: (d, s, r) => Math.min(s, W[11] * Math.pow(d, -W[12]) * (Math.pow(s + 1, W[13]) - 1) * Math.exp((1 - r) * W[14])),
+};
+function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+// 間隔天數 → 到期時間（到期日凌晨 4 點），套上限 45 天＋考前總掃
+function scheduleDue(t, ivlDays, key) {
+  const today = dayOf(t);
+  const n = Math.min(MAX_IVL, Math.max(1, Math.round(ivlDays)));
+  let due = addDays(today, n);
+  if (today < SWEEP_START && due >= addDays(EXAM_DATE, -7)) {
+    // 下次到期會跳過考前總掃 → 拉回總掃區間內（依卡片分散，避免全擠同一天）
+    const spread = addDays(SWEEP_START, hash(key) % (SWEEP_DAYS - 7));
+    due = spread > today ? spread : addDays(today, 1);
+  } else if (today >= SWEEP_START && due >= EXAM_DATE) {
+    due = today < addDays(EXAM_DATE, -1) ? addDays(EXAM_DATE, -1) : addDays(today, 1);
+  }
+  return dayStart(due);
+}
+
+// g：1=重來 2=困難 3=良好 4=簡單（只有舊字首次檢測用到）
+function review(id, g, t) {
+  let c = S.cards[id];
+  if (!c) {
+    c = S.cards[id] = { st: fsrs.initS(g), df: fsrs.initD(g), reps: 0, lapses: 0, last: 0, due: 0 };
+  } else {
+    const r = fsrs.R(Math.max(0, (t - c.last) / DAY), c.st);
+    c.st = Math.max(0.1, g === 1 ? fsrs.forgetS(c.df, c.st, r) : fsrs.recallS(c.df, c.st, r, g));
+    c.df = fsrs.nextD(c.df, g);
+    if (g === 1) c.lapses++;
+  }
+  c.due = scheduleDue(t, g === 1 ? 1 : fsrs.ivl(c.st), id);
+  c.reps++; c.last = t;
+  reviewCalls++;
+  return c;
+}
+let reviewCalls = 0;
+
+/* ============================================================
+   狀態（localStorage，經 syncAdapter）
+   ============================================================ */
+// 同步接縫：之後雲端同步只要換掉這個物件（load 回傳 state 或 null；save 存整包）
+const syncAdapter = {
+  load() { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; } },
+  save(state) { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { console.warn("存檔失敗", e); } },
+};
+let store = syncAdapter;
+// cards：{字: FSRS 狀態}；intro：新字輸入看過的時間；days：每天的任務與紀錄（老師端讀這裡）；log：逐次作答
+const freshState = () => ({ v: 2, cards: {}, intro: {}, days: {}, log: [] });
+let S = freshState();
+const save = () => store.save(S);
+
+/* ============================================================
+   雲端同步（Supabase）。CONFIG 留空＝只存這台裝置（跟以前完全一樣）
+   - 學生不用登入：老師給的連結 ?s=代碼（32 個十六進位字）存在這台裝置；雲端只認代碼
+   - 本機優先：每次存檔照樣先寫 localStorage；有網路才在背景上傳「改過的部分」
+   - 雲端有版本號：上傳時附「我上次看到的版本」，被別台搶先就先合併再重送（不會互蓋）
+   - 這台沒成功下載過雲端進度之前，絕不上傳（新手機／空裝置蓋不掉雲端）
+   - 每次開網頁先整包下載合併；上傳前跟雲端那包照合併規則比，只送較新的卡／進度較多的那天（雲端只會前進）
+   ============================================================ */
+const CONFIG = { SUPABASE_URL: "https://knsdpvmhloobfduhfwyk.supabase.co", SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtuc2Rwdm1obG9vYmZkdWhmd3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNzMyMTMsImV4cCI6MjA5OTg0OTIxM30.HiH0OjKi1CllfM31YL2ETn3bxM9omzAtAF3QSQqnK80" };   // 填值前先跑 supabase/001_srs.sql
+const CLOUD = !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY);
+const SYNC_KEY = "tsvt-srs-sync";
+const TOKEN_RE = /^[0-9a-f]{32}$/;
+const LOG_CAP = 5000;
+
+// 穩定的 JSON（key 排序）：雲端 jsonb 會打亂 key 順序，比對前要先統一
+function canon(v) {
+  if (Array.isArray(v)) return "[" + v.map((x) => x === undefined ? "null" : canon(x)).join(",") + "]";
+  if (v && typeof v === "object") return "{" + Object.keys(v).filter((k) => v[k] !== undefined).sort()
+    .map((k) => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
+  return JSON.stringify(v);
+}
+
+// 別台／雲端來的資料：形狀不對的項目直接丟掉（不讓它弄壞畫面或老師端）
+const isObj = (o) => !!o && typeof o === "object" && !Array.isArray(o);
+const fin = (x) => typeof x === "number" && isFinite(x);
+const okKey = (k) => k !== "__proto__" && k !== "constructor" && k !== "prototype" && k.length <= 100;
+const okCard = (c) => isObj(c) && ["st", "df", "reps", "lapses", "last", "due"].every((k) => fin(c[k]));
+const okDay = (d) => isObj(d) && Array.isArray(d.set) && d.set.every((x) => typeof x === "string") &&
+  Array.isArray(d.queue) && d.queue.every((e) => isObj(e) && typeof e.id === "string") &&
+  isObj(d.graded) && isObj(d.fails) && isObj(d.boosts) && isObj(d.mockFirst) && fin(d.ans) && fin(d.ms);
+const okLog = (e) => isObj(e) && fin(e.t) && typeof e.id === "string";
+const logKey = (e) => e.t + "|" + e.id;
+function cleanState(x) {
+  const s = freshState();
+  if (!isObj(x)) return s;
+  if (isObj(x.cards)) for (const k of Object.keys(x.cards)) if (okKey(k) && okCard(x.cards[k])) s.cards[k] = x.cards[k];
+  if (isObj(x.intro)) for (const k of Object.keys(x.intro)) if (okKey(k) && fin(x.intro[k])) s.intro[k] = x.intro[k];
+  if (isObj(x.days)) for (const k of Object.keys(x.days)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && okDay(x.days[k])) s.days[k] = x.days[k];
+  if (Array.isArray(x.log)) s.log = x.log.filter(okLog);
+  return s;
+}
+
+// 合併兩份進度（L＝這台、R＝雲端）。keepDay：正在作答的那天一律留這台的（作答中的隊伍不能被換掉）
+function newerCard(a, b) {
+  if (!a) return b; if (!b) return a;
+  if (a.last !== b.last) return b.last > a.last ? b : a;      // 最後作答時間較新的贏
+  if (a.reps !== b.reps) return b.reps > a.reps ? b : a;
+  return b.due < a.due ? b : a;                                // 同一次作答：到期日較早的（「昨天沒過→今天到期」）
+}
+const dayRank = (d) => [d.passed ? 1 : 0, d.ans || 0, d.ms || 0];
+function moreDay(a, b) {   // 進度較多的那天贏；完全一樣 → 雲端（b）
+  if (!a) return b; if (!b) return a;
+  const ra = dayRank(a), rb = dayRank(b);
+  for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i] ? a : b;
+  return b;
+}
+function mergeState(L, R, keepDay) {
+  const M = freshState();
+  for (const id of new Set(Object.keys(L.cards).concat(Object.keys(R.cards)))) M.cards[id] = newerCard(L.cards[id], R.cards[id]);
+  for (const src of [L.intro, R.intro]) for (const id of Object.keys(src)) M.intro[id] = M.intro[id] != null ? Math.min(M.intro[id], src[id]) : src[id];
+  for (const d of new Set(Object.keys(L.days).concat(Object.keys(R.days)))) {
+    const a = L.days[d], b = R.days[d];
+    const w = d === keepDay && a ? a : moreDay(a, b);
+    if (a && b && (a.closed || b.closed)) w.closed = true;
+    M.days[d] = w;
+  }
+  const keys = new Set();
+  for (const e of L.log.concat(R.log)) { const k = logKey(e); if (!keys.has(k)) { keys.add(k); M.log.push(e); } }
+  M.log.sort((x, y) => x.t - y.t);
+  if (M.log.length > LOG_CAP) M.log.splice(0, M.log.length - LOG_CAP);
+  return M;
+}
+
+// 要上傳什麼：拿這台跟「雲端現在那包」（snap）照合併規則比，只送「合併後會跟雲端不一樣」的項目
+// → 上傳的一定是較新的卡／進度較多的那天；比雲端舊或一樣的永遠不送（雲端只會前進、不會倒退）
+function diffState(st, snap) {
+  const p = {}, put = (sec, k, v) => { (p[sec] = p[sec] || {})[k] = JSON.parse(JSON.stringify(v)); };
+  for (const k of Object.keys(st.cards)) if (newerCard(snap.cards[k], st.cards[k]) !== snap.cards[k]) put("cards", k, st.cards[k]);
+  for (const k of Object.keys(st.days)) {
+    const a = st.days[k], b = snap.days[k];
+    let w = moreDay(a, b);                                     // 平手 → 雲端
+    if (b && (a.closed || b.closed) && !w.closed) w = Object.assign({}, w, { closed: true });
+    if (w !== b) put("days", k, w);
+  }
+  for (const k of Object.keys(st.intro)) if (!(snap.intro[k] <= st.intro[k])) put("intro", k, st.intro[k]);
+  const have = new Set(snap.log.map(logKey));
+  const floor = snap.log.length >= LOG_CAP ? snap.log.reduce((m, e) => Math.min(m, e.t), Infinity) : -Infinity;
+  const log = st.log.filter((e) => !have.has(logKey(e)) && e.t > floor);   // 比雲端上限還舊的，送了也會被裁掉
+  if (log.length) p.log = JSON.parse(JSON.stringify(log));
+  return p;
+}
+function applyPatch(s, p) {   // 照 srs_save 的規則把上傳成功的變更套進 snap（跟雲端那包保持一樣）
+  for (const sec of ["cards", "intro", "days"]) if (p[sec]) Object.assign(s[sec], p[sec]);
+  if (p.log) {
+    const m = new Map();
+    s.log.concat(p.log).forEach((e) => { if (!m.has(logKey(e))) m.set(logKey(e), e); });
+    s.log = [...m.values()].sort((x, y) => x.t - y.t || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0)).slice(-LOG_CAP);
+  }
+}
+const hasLocalProgress = (st) => Object.keys(st.cards).length > 0 || Object.values(st.days).some((d) => d.ans > 0);
+
+// 同步引擎。o：{ rpc(name,args)→Promise<回傳值>（網路錯丟 {offline:true}）, getS, setS, saveLocal, metaLoad, metaSave,
+//               status(code), keepDay()→作答中的日期或 null, todayKey(), ask(kind, info)→Promise<bool>, onMerged(first, staleToday) }
+function makeSync(o) {
+  let M = o.metaLoad() || {};
+  // snap：雲端在 M.rev 那一版長怎樣。只放記憶體、只來自這次開網頁後真的下載到的雲端資料
+  // → 每次開網頁第一次同步一定整包下載重新合併（本機存檔倒退、從備份還原都會被補回來，不會拿舊的去蓋雲端）
+  let snap = null;
+  let chain = Promise.resolve(), timer = null, since = 0, prevMeta = null;
+  const run = (fn) => (chain = chain.then(fn, fn));
+  const putMeta = () => o.metaSave(M);
+  const fail = (e) => o.status(e && e.offline === false ? "error" : "offline");
+
+  function adopt(remote, rev) {   // 把雲端那包併進這台，並記下「雲端現在長怎樣」
+    const L = o.getS(), kd = o.todayKey(), before = L.days[kd];
+    const merged = mergeState(L, remote, o.keepDay());
+    o.setS(merged); o.saveLocal();
+    snap = JSON.parse(JSON.stringify(remote));   // 另存一份：merged 會共用 remote 的物件，之後作答會直接改到它們
+    M.rev = rev; delete M.h; delete M.logT; delete M.pend;   // 舊版同步紀錄的欄位，用不到了
+    M.pulled = true; putMeta();
+    return !!before && merged.days[kd] === before && !before.ans;   // 今天的清單是這台合併前自己排的、還沒動過
+  }
+
+  async function doPull() {
+    if (!M.token) { o.status("nolink"); return false; }
+    o.status("busy");
+    let r;
+    try { r = await o.rpc("srs_load", { p_token: M.token, p_rev: M.pulled && snap ? M.rev : null }); } catch (e) { fail(e); return false; }
+    if (!r || !r.ok) {
+      if (r && r.error === "invalid_link") { o.status("invalid"); if (prevMeta && !M.pulled) { M = prevMeta; prevMeta = null; putMeta(); } }
+      else o.status("error");
+      return false;
+    }
+    if (!r.unchanged) {
+      const first = !M.pulled;
+      if (first) {
+        // 這台第一次用這個連結：決定「合併」還是「以雲端為準」
+        let replace = false;
+        if (M.sid && M.sid !== r.sid) {
+          if (!(await o.ask("switch", { from: M.name, to: r.name }))) {
+            M = prevMeta && prevMeta.token ? prevMeta : {}; prevMeta = null; putMeta();
+            o.status(M.token ? "ok" : "nolink");
+            return false;
+          }
+          replace = true;
+        } else if (!M.sid && hasLocalProgress(o.getS())) {
+          replace = !(await o.ask("bind", { to: r.name, n: Object.keys(o.getS().cards).length }));
+        }
+        if (replace) o.setS(freshState());
+      }
+      M.sid = r.sid; M.name = r.name; prevMeta = null;
+      const stale = adopt(cleanState(r.state), r.rev);
+      o.onMerged(first, stale);
+    }
+    return doPush(0);
+  }
+
+  async function doPush(tries) {
+    if (!M.token) { o.status("nolink"); return false; }
+    if (!M.pulled) return false;                 // 沒成功下載過雲端之前絕不上傳
+    if (!snap) return doPull();                  // 這次開網頁還沒拿到雲端整包 → 先下載合併（成功後它會接著上傳）
+    const patch = diffState(o.getS(), snap);
+    if (!Object.keys(patch).length) { o.status("ok"); return true; }
+    o.status("busy");
+    let r;
+    try { r = await o.rpc("srs_save", { p_token: M.token, p_patch: patch, p_base_rev: M.rev }); } catch (e) { fail(e); return false; }
+    if (r && r.ok) {
+      M.rev = r.rev; applyPatch(snap, patch);
+      putMeta();
+      if (Object.keys(diffState(o.getS(), snap)).length) schedule(); else o.status("ok");
+      return true;
+    }
+    const err = r && r.error;
+    if (err === "conflict" && tries < 3) {       // 別台先寫了：合併後重送
+      const stale = adopt(cleanState(r.state), r.rev);
+      o.onMerged(false, stale);
+      return doPush(tries + 1);
+    }
+    if (err === "too_fast") { schedule(3000); return false; }
+    o.status(err === "invalid_link" ? "invalid" : err === "too_large" ? "toolarge" : "error");
+    return false;
+  }
+
+  function schedule(ms) {   // 作答後 5 秒沒再動就送；一直在作答最晚 30 秒也送一次
+    if (!M.token || !M.pulled) return;
+    clearTimeout(timer);
+    const t = Date.now();
+    if (!since) since = t;
+    const wait = Math.max(0, Math.min(ms != null ? ms : 5000, since + 30000 - t));
+    timer = setTimeout(() => { since = 0; run(() => doPush(0)); }, wait);
+    o.status("pending");
+  }
+  function setToken(tk) {
+    if (!TOKEN_RE.test(tk) || tk === M.token) return false;
+    prevMeta = M.token ? M : null;
+    M = { token: tk, sid: M.sid, name: M.name }; snap = null;   // 留 sid 判斷是不是換了另一位學生
+    putMeta();
+    return true;
+  }
+  return {
+    pull: () => run(doPull),
+    push: () => { clearTimeout(timer); since = 0; return run(() => doPush(0)); },
+    schedule, setToken,
+    meta: () => M, snapshot: () => snap,
+  };
+}
+
+/* ============================================================
+   資料
+   ============================================================ */
+let DATA, ITEMS = {}, BANK_ITEMS = {}, SCHEDULE = [], LEARNED = [];
+function indexData(d) {
+  DATA = d; ITEMS = {}; BANK_ITEMS = {};
+  d.items.forEach((it) => { ITEMS[it.id] = it; (BANK_ITEMS[it.bank] = BANK_ITEMS[it.bank] || []).push(it); });
+  SCHEDULE = d.schedule; LEARNED = d.learnedBanks;
+}
+const bankName = (b) => { const m = b.match(/u(\d+)_(upper|lower)/); return `U${m[1]}${m[2] === "upper" ? "上" : "下"}`; };
+const curBatch = (day) => SCHEDULE.find((b) => b.date <= day && day < b.testDate) || null;
+const mockBatch = (day) => SCHEDULE.find((b) => b.testDate === addDays(day, 1) && b.date <= day) || null;
+const seen = (id) => !!S.cards[id];
+
+/* ============================================================
+   每日任務：當天一開始就固定一份清單（約 20 分鐘），全部拼對才過關
+   ============================================================ */
+function firstCheckPool(day, exclude) {
+  const cur = curBatch(day);
+  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.testDate <= day).map((b) => b.bank));
+  const list = [];
+  banks.forEach((b) => (BANK_ITEMS[b] || []).forEach((it) => {
+    if (!seen(it.id) && !exclude.has(it.id) && (!cur || cur.bank !== b)) list.push(it);
+  }));
+  return list.filter((i) => i.wrong).concat(list.filter((i) => !i.wrong));
+}
+const entryCost = (e) => COST[e.k] * (e.k === "recall" ? (e.steps ? 2.5 : e.tag === "fc" ? 1.7 : 1.3) : 1);
+
+function buildDay(day) {
+  // 前幾天沒過關的字：至少今天到期
+  const left = new Set();
+  for (const d in S.days) {
+    const R = S.days[d];
+    if (d < day && !R.closed) {
+      R.queue.forEach((e) => { if (e.k === "recall" && S.cards[e.id]) { S.cards[e.id].due = Math.min(S.cards[e.id].due, dayStart(day)); left.add(e.id); } });
+      R.closed = true;
+    }
+  }
+  const D = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, mock: null, mockFirst: {},
+    passed: false, passedAt: 0, ms: 0, lastAct: 0, est: 0, forcedEst: 0, fc: 0, extra: 0 };
+  const inSet = new Set();
+  const push = (e) => { D.queue.push(e); D.est += entryCost(e); };
+  const addRecall = (id, tag, steps) => { inSet.add(id); D.set.push(id); push({ id, k: "recall", tag, steps: steps || null, step: 0, hard: 0, after: 0, t: 0 }); };
+  // 1. 本批（考前每天一輪；考前一天＝明天要考）
+  const b = curBatch(day), mb = mockBatch(day);
+  if (mb) D.mock = mb.bank;
+  if (b) BANK_ITEMS[b.bank].forEach((it) => {
+    if (!S.intro[it.id]) {
+      push({ id: it.id, k: "input", after: 0, t: 0 });
+      push({ id: it.id, k: "recog", after: 0, t: 0 });
+      addRecall(it.id, "new", STEPS);
+    } else addRecall(it.id, D.mock === b.bank ? "mock" : "batch");
+  });
+  D.forcedEst = D.est;
+  // 上課日（本批第一次輸入新字）只做新字，舊字留到明天（太一 2026-10-03 拍板）
+  if (D.queue.some((e) => e.k === "input")) { S.days[day] = D; save(); return D; }
+  const fits = (id, tag) => D.est + entryCost({ k: "recall", tag }) <= BUDGET_SEC;
+  // 2. 昨天沒過關的
+  left.forEach((id) => { if (!inSet.has(id) && fits(id, "rev")) addRecall(id, "rev"); });
+  // 3. 舊字首次檢測（排在到期複習前：沒檢測過的舊字等於完全沒複習）
+  //    但積欠的到期複習超過 BACKLOG_PAUSE 張時，今天暫停首檢、名額讓給複習（避免越積越多）
+  const t0 = dayStart(day);
+  const dueIds = Object.keys(S.cards).filter((id) => !inSet.has(id) && S.cards[id].due < dayStart(addDays(day, 1)));
+  const overdue = dueIds.filter((id) => S.cards[id].due < t0).length;
+  D.fcPaused = overdue > BACKLOG_PAUSE;
+  if (!D.fcPaused) for (const it of firstCheckPool(day, inSet)) {
+    if (D.fc >= FIRST_CHECK_PER_DAY || !fits(it.id, "fc")) break;
+    addRecall(it.id, "fc"); D.fc++;
+  }
+  // 4. 到期複習（最可能忘的先＝提取率最低）；放不下的留到明天
+  const Rof = (id) => fsrs.R(Math.max(0, (t0 - S.cards[id].last) / DAY), S.cards[id].st);
+  dueIds.sort((a, c) => Rof(a) - Rof(c))
+    .forEach((id) => { if (fits(id, "rev")) addRecall(id, "rev"); });
+  S.days[day] = D;
+  save();
+  return D;
+}
+const today = (t) => S.days[dayOf(t)] || buildDay(dayOf(t));
+
+// 下一張：隊伍裡第一張「已隔夠張數（Q.real，加強卡不算）＋時間」的。
+// 都還沒到 → 提早出「等最久」的那張，但只要還有別張，就不讓剛出過的同一張馬上再出；只剩它才直接出。
+function pick(Q, t) {
+  if (!Q.queue.length) return null;
+  const real = Q.real || 0;
+  const i = Q.queue.findIndex((e) => real >= e.after && t >= e.t);
+  if (i >= 0) return { e: Q.queue[i], i, early: false };
+  const others = Q.queue.some((e) => e.id !== Q.lastId);
+  let j = -1;
+  Q.queue.forEach((e, k) => { if ((!others || e.id !== Q.lastId) && (j < 0 || e.t < Q.queue[j].t)) j = k; });
+  return { e: Q.queue[j], i: j, early: true };
+}
+function requeue(Q, e, mins, t) {
+  e.after = (Q.real || 0) + MIN_GAP;
+  e.t = t + Math.max(mins * MIN, 60e3);
+  Q.queue.splice(Math.min(Q.queue.length, MIN_GAP), 0, e);
+}
+const dayOfQ = (Q, t) => Q.set ? Q : (S.days[Q.day] || today(t));   // 作答算在開始作答的那天（跨過凌晨 4 點也一樣）
+const gradeOf = (ok, ms) => !ok ? 1 : ms > GOOD_MS ? 2 : 3;
+
+// 拼寫作答。Q＝每日任務（D）或自由練習的隊伍
+function answerRecall(Q, pk, ok, ms, t) {
+  const e = pk.e, id = e.id, D = dayOfQ(Q, t), daily = Q === D;
+  const g = gradeOf(ok, ms);
+  Q.queue.splice(pk.i, 1);
+  Q.ans++; Q.real = (Q.real || 0) + 1; Q.lastId = id;
+  let done = false;
+  // 自由練習不碰今天清單／模擬考的字（那些只由每日任務評分）
+  const freeLocked = !daily && (D.set.includes(id) || (D.mock && ITEMS[id].bank === D.mock));
+  if (freeLocked) done = !!ok;
+  else if (D.graded[id] === undefined) {
+    // 當天第一次作答 → 長期排程（FSRS）
+    const fc = !S.cards[id] && !e.steps;
+    review(id, fc ? [0, 1, 3, 4][g] : g, t);
+    D.graded[id] = g;
+    if (e.tag === "mock") D.mockFirst[id] = ok;
+    if (fc && g > 1) done = true;                       // 舊字首檢拼得出來 → 直接長間隔
+    else if (g === 1 && !e.steps) e.steps = fc ? STEPS : RELEARN;
+    else if (!e.steps) done = true;                     // 複習拼對 → 今天這張過了
+  }
+  if (!done) {
+    if (g === 1) {
+      e.step = 0; e.hard = 0;
+      if (!e.steps) e.steps = RELEARN;
+      Q.fails = Q.fails || {};
+      Q.fails[id] = (Q.fails[id] || 0) + 1;
+      if (daily) D.fails[id] = Q.fails[id]; else D.fails[id] = (D.fails[id] || 0) + 1;
+      requeue(Q, e, e.steps[0], t);
+      if (Q.fails[id] % BOOST_EVERY === 0) {
+        Q.queue.unshift({ id, k: "boost", after: 0, t: 0 });
+        if (daily) D.boosts[id] = (D.boosts[id] || 0) + 1;
+      }
+    } else if (e.steps) {
+      // Anki 學習步驟：困難＝重複這一步（連兩次困難就放行，免得打字慢的學生卡死）、良好＝下一步
+      if (g === 2 && ++e.hard < 2) requeue(Q, e, e.steps[e.step], t);
+      else {
+        e.step++; e.hard = 0;
+        if (e.step < e.steps.length) requeue(Q, e, e.steps[e.step], t);
+      }
+    }
+  }
+  if (!daily) D.extra++;
+  logAct(D, t);
+  S.log.push({ t, id, g, ms: Math.round(ms), m: daily ? "d" : "f" });
+  if (S.log.length > 5000) S.log.splice(0, S.log.length - 5000);
+  if (daily && !D.queue.length && !D.passed) { D.passed = true; D.passedAt = t; }
+  save();
+  return g;
+}
+// 非拼寫的卡（新字輸入、認得練習、加強卡）：看完/做完就從隊伍拿掉
+function finishOther(Q, pk, t) {
+  Q.queue.splice(pk.i, 1);
+  Q.ans++; Q.lastId = pk.e.id;
+  if (pk.e.k === "boost") {
+    // 加強卡剛把答案秀出來 → 這個字要從現在起再隔 3 張、60 秒才考（加強卡本身不算一張）
+    Q.queue.forEach((e) => { if (e.id === pk.e.id && e.k === "recall") { e.after = (Q.real || 0) + MIN_GAP; e.t = Math.max(e.t, t + 60e3); } });
+  } else Q.real = (Q.real || 0) + 1;
+  if (pk.e.k === "input") S.intro[pk.e.id] = t;
+  const D = dayOfQ(Q, t);
+  logAct(D, t);
+  if (Q === D && !D.queue.length && !D.passed) { D.passed = true; D.passedAt = t; }
+  save();
+}
+function logAct(D, t) {
+  if (D.lastAct && t - D.lastAct < 5 * MIN) D.ms += t - D.lastAct;   // 停超過 5 分鐘不算
+  D.lastAct = t;
+}
+const remainSec = (Q) => Q.queue.reduce((s, e) => s + entryCost(e), 0);
+const passedCount = (D) => D.set.filter((id) => !D.queue.some((e) => e.id === id)).length;
+
+/* ---------- 總複習 / 再多練一些（不影響今天過關） ---------- */
+function buildFree(banks, size, t) {
+  // 不含今天清單（本批／模擬考／今天要複習的）與還沒上過「新字輸入」的新進度字
+  const D = today(t), sched = new Set(SCHEDULE.map((b) => b.bank));
+  const inRange = (id) => banks.has(ITEMS[id].bank) && !D.set.includes(id) &&
+    !(D.mock && ITEMS[id].bank === D.mock) && !(sched.has(ITEMS[id].bank) && !S.intro[id]);
+  const ids = [];
+  const add = (id, tag) => { if (ids.length < size && !ids.some((x) => x.id === id)) ids.push({ id, tag }); };
+  DATA.items.filter((i) => inRange(i.id) && !seen(i.id)).sort((a, b) => (b.wrong ? 1 : 0) - (a.wrong ? 1 : 0))
+    .forEach((i) => add(i.id, "fc"));
+  Object.keys(S.cards).filter((id) => inRange(id) && S.cards[id].due <= t)
+    .sort((a, b) => S.cards[a].due - S.cards[b].due).forEach((id) => add(id, "rev"));
+  Object.keys(S.cards).filter(inRange)
+    .sort((a, b) => fsrs.R((t - S.cards[a].last) / DAY, S.cards[a].st) - fsrs.R((t - S.cards[b].last) / DAY, S.cards[b].st))
+    .forEach((id) => add(id, "rev"));
+  return { queue: shuffle(ids).map((x) => ({ id: x.id, k: "recall", tag: x.tag, steps: null, step: 0, hard: 0, after: 0, t: 0 })), ans: 0, real: 0, fails: {}, day: dayOf(t) };
+}
+
+/* ============================================================
+   工具
+   ============================================================ */
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; }; }
+function shuffle(a, seed) { const r = seed != null ? rng(seed) : Math.random; a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const normSpell = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[’‘`]/g, "'")
+  .replace(/\s+/g, " ").trim().replace(/[.,!?。，]+$/, "").trim();
+const spellOk = (it, typed) => { const n = normSpell(typed); return n !== "" && it.accept.concat([it.ans]).some((a) => normSpell(a) === n); };
+const hintOf = (s) => s.split(" ").map((w) => w.split("").map((ch, i) => i === 0 || !/[a-z]/i.test(ch) ? ch : "_").join("")).join("  ");
+const letters = (s) => (s.match(/[a-z]/gi) || []).length;
+const collFront = (c) => esc(c.en).replace(/\[[^\]]*\]/g, "____");
+const collBack = (c) => esc(c.en).replace(/\[([^\]]*)\]/g, "<b>$1</b>");
+function hlSent(s) {
+  const e = esc(s.en);
+  if (!s.hl) return e;
+  const h = esc(s.hl), i = e.toLowerCase().indexOf(h.toLowerCase());
+  return i < 0 ? e : e.slice(0, i) + "<b>" + e.slice(i, i + h.length) + "</b>" + e.slice(i + h.length);
+}
+function distractors(it) {
+  const pool = DATA.items.filter((x) => x.id !== it.id && x.kind === it.kind && x.zh !== it.zh);
+  const p1 = it.pos.split("/")[0];
+  const tiers = [
+    pool.filter((x) => x.unit === it.unit && x.pos.split("/")[0] === p1),
+    pool.filter((x) => x.unit === it.unit),
+    pool.filter((x) => x.pos.split("/")[0] === p1),
+    pool,
+  ];
+  const out = [];
+  for (const tier of tiers) for (const x of shuffle(tier)) {
+    if (out.length < 3 && !out.some((o) => o.zh === x.zh)) out.push(x);
+  }
+  return shuffle(out.map((x) => x.zh).concat([it.zh]));
+}
+
+/* ============================================================
+   音檔：全程只用同一個 <audio>（Android 同時太多 media element 會壞）
+   ============================================================ */
+const au = document.getElementById("au");
+function play(file) {
+  if (!file || clock.t != null) return;
+  au.src = "audio/" + file;
+  const p = au.play();
+  if (p && p.catch) p.catch((e) => { if (e.name !== "AbortError" && e.name !== "NotAllowedError") console.warn("audio", e.name); });
+}
+const SPK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 010 7"/><path d="M18.5 5.5a9 9 0 010 13"/></svg>';
+const playBtn = (file, label) => `<button class="play" data-play="${esc(file)}">${SPK}${label || "發音"}</button>`;
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-play]");
+  if (b) { e.stopPropagation(); play(b.dataset.play); }
+});
+
+/* ============================================================
+   畫面
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const main = $("main");
+function setHeader(title, sub, back) {
+  $("title").textContent = title; $("sub").textContent = sub || "";
+  $("back").hidden = !back; $("topbar").hidden = true;
+}
+$("back").onclick = () => { session = null; home(); };
+function toast(msg) {
+  const d = document.createElement("div"); d.className = "toast"; d.textContent = msg;
+  document.body.appendChild(d); setTimeout(() => d.remove(), 1600);
+}
+
+function home() {
+  const t = now(), day = dayOf(t), D = today(t);
+  setHeader("統測單字", fmtDay(day) + (qs.get("today") ? "　（測試日期）" : ""), false);
+  const b = curBatch(day), next = SCHEDULE.find((x) => x.date > day);
+  const learnedItems = LEARNED.reduce((n, bk) => n + BANK_ITEMS[bk].length, 0);
+  const learnedSeen = LEARNED.reduce((n, bk) => n + BANK_ITEMS[bk].filter((i) => seen(i.id)).length, 0);
+  let h = `<div class="card"><div class="lbl">本批進度</div>`;
+  if (b) h += `<div class="big">${bankName(b.bank)}　15 字＋3 片語</div><div class="small mut">${fmtDay(b.testDate)} 上課考</div>`;
+  else h += `<div class="big">目前沒有新進度</div><div class="small mut">${next ? fmtDay(next.date) + " 開始 " + bankName(next.bank) : "新單元題庫做好後會自動排進來"}</div>`;
+  h += `</div>`;
+  if (D.mock) {
+    const n = BANK_ITEMS[D.mock].length, tried = Object.keys(D.mockFirst).length, okN = Object.values(D.mockFirst).filter(Boolean).length;
+    h += `<div class="card"><div class="lbl" style="color:var(--red)">明天要考：${bankName(D.mock)}</div>
+      <div class="small">${tried < n ? `今天的任務會先考這 ${n} 題拼寫，錯的會一直出到拼對。` : `模擬考第一次就拼對 <b>${okN} / ${n}</b>。`}</div></div>`;
+  }
+  const est = Math.ceil(remainSec(D) / 60);
+  h += `<div class="card"><div class="lbl">今日任務</div>`;
+  if (D.passed) {
+    h += `<div class="done"><div class="big">今天的複習完成</div><div class="small mut">${D.set.length} 張全部拼對・花了約 ${Math.max(1, Math.round(D.ms / MIN))} 分鐘</div></div>
+      <button class="btn blue" id="goMore">再多練一些<span class="s">不影響今天的過關</span></button>`;
+  } else {
+    h += `<button class="btn" id="goDaily">${D.ans ? "繼續" : "開始"}
+      <span class="s">${D.set.length} 張・已過 ${passedCount(D)}・還要約 ${est} 分鐘</span></button>
+      <div class="small mut mt">每張都要拼對才算過；拼錯的會隔幾張再出。</div>`;
+  }
+  h += `<div class="stat mt"><div><b>${D.ans}</b>今日已答</div><div><b>${learnedSeen}/${learnedItems}</b>舊字已檢測</div><div><b>${daysBetween(day, EXAM_DATE)}</b>距統測天數</div></div></div>`;
+  h += `<div class="row2"><button class="btn ghost" id="goFree">總複習</button><button class="btn ghost" id="goRead">閱讀</button></div>`;
+  main.innerHTML = h;
+  if ($("goDaily")) $("goDaily").onclick = () => startSession(D, "daily");
+  if ($("goMore")) $("goMore").onclick = () => {
+    const banks = new Set(LEARNED.concat(SCHEDULE.filter((x) => x.date <= day).map((x) => x.bank)));
+    startSession(buildFree(banks, 10, now()), "free");
+  };
+  $("goFree").onclick = freePicker;
+  $("goRead").onclick = readingList;
+}
+
+/* ---------- 作答流程 ---------- */
+let session = null;
+function startSession(Q, kind) { session = { Q, kind, n: 0 }; nextCard(); }
+function nextCard() {
+  const t = now(), Q = session.Q;
+  const pk = pick(Q, t);
+  if (!pk) return sessionDone();
+  session.n++;
+  if (session.kind === "free") setHeader("練習", `還剩 ${Q.queue.filter((e) => e.k === "recall").length} 張（不影響今天過關）`, true);
+  else setHeader("今日任務", `${Q.set.length} 張・已過 ${passedCount(Q)}・還要約 ${Math.ceil(remainSec(Q) / 60)} 分鐘`, true);
+  ({ input: renderInput, recog: renderRecog, recall: renderRecall, boost: renderBoost })[pk.e.k](pk);
+}
+function sessionDone() {
+  const kind = session.kind;
+  session = null;
+  if (kind === "daily") return home();
+  setHeader("完成", "", true);
+  main.innerHTML = `<div class="card center"><div class="big" style="font-size:20px">這組練完了</div>
+    <button class="btn mt" id="goHome">回首頁</button></div>`;
+  $("goHome").onclick = home;
+}
+function picHtml(it) {
+  if (it.img) return `<div class="pic"><img src="img/${esc(it.img)}" alt=""></div>`;
+  if (it.emoji) return `<div class="pic"><span class="emo">${esc(it.emoji)}</span></div>`;
+  return "";
+}
+function sentHtml(s) {
+  const f = s.form ? `<div class="formtag">${esc(s.form.en)}${s.form.pos || s.form.zh ? `（${esc([s.form.pos, s.form.zh].filter(Boolean).join(" "))}）` : ""}</div>` : "";
+  return `<div class="sent" data-play="${esc(s.audio)}">${f}${hlSent(s)} ${SPK.replace("<svg", '<svg style="width:14px;height:14px;vertical-align:-2px;color:#4A7BC8"')}
+    ${s.zh ? `<div class="zh">${esc(s.zh)}</div>` : ""}</div>`;
+}
+const TAGS = { mock: '<span class="tag red">明天要考</span>', batch: '<span class="tag green">本批</span>', new: '<span class="tag green">新字</span>',
+  fc: '<span class="tag">首次檢測</span>', rev: '<span class="tag">複習</span>' };
+function backHtml(it, n) {
+  return `<div class="word mt">${esc(it.en)}</div>
+    <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
+    ${picHtml(it)}
+    <div class="zhbig" style="font-size:20px">${esc(it.zh)}</div>
+    ${it.sentences.length ? `<div class="lbl mt">例句（點句子聽發音）</div>` + it.sentences.slice(0, n).map(sentHtml).join("") : ""}
+    ${it.collocations.length ? `<div class="lbl mt">常見搭配</div><div class="colls">${it.collocations.map((c) => `<div>${collBack(c)}　<span class="mut">${esc(c.zh)}</span></div>`).join("")}</div>` : ""}
+    ${it.derivatives.length ? `<div class="deriv">相關字：${it.derivatives.map(esc).join("、")}</div>` : ""}`;
+}
+
+function renderInput(pk) {
+  const it = ITEMS[pk.e.id];
+  main.innerHTML = `<div class="q"><div><span class="tag green">新字輸入</span><span class="tag">${bankName(it.bank)}</span></div>
+    ${backHtml(it, 2)}<button class="btn mt" id="ok">記好了，開始練習</button></div>`;
+  play(it.audio);
+  $("ok").onclick = () => { finishOther(session.Q, pk, now()); nextCard(); };
+}
+
+// 新字輸入當天的「認得」練習：英→中選擇，不進長期排程
+function renderRecog(pk) {
+  const it = ITEMS[pk.e.id];
+  const opts = distractors(it);
+  main.innerHTML = `<div class="q"><div><span class="tag green">新字</span><span class="tag">認得</span></div>
+    <div class="word mt">${esc(it.en)}</div>
+    <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
+    <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join("")}</div>
+    <div id="fb"></div></div>`;
+  play(it.audio);
+  let done = false;
+  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => {
+    if (done) return; done = true;
+    const ok = opts[+btn.dataset.i] === it.zh;
+    main.querySelectorAll(".opt").forEach((b) => { if (opts[+b.dataset.i] === it.zh) b.classList.add("correct"); });
+    if (!ok) btn.classList.add("wrong");
+    finishOther(session.Q, pk, now());
+    if (ok) setTimeout(() => { if (session) nextCard(); }, 700);
+    else { $("fb").innerHTML = `<button class="btn mt" id="nx">下一張</button>`; $("nx").onclick = nextCard; }
+  });
+}
+
+// 每日主卡：中→英拼寫。打字一定在翻面之前；送出才翻面
+function renderRecall(pk) {
+  const e = pk.e, it = ITEMS[e.id];
+  const t0 = performance.now();
+  const again = (session.Q.fails || {})[e.id];
+  main.innerHTML = `<div class="q" data-id="${esc(e.id)}">
+    <div>${TAGS[e.tag] || ""}${again ? '<span class="tag red">再拼一次</span>' : ""}<span class="tag">拼寫</span></div>
+    <div class="zhbig mt">${esc(it.zh)}</div>
+    <div class="pos">${esc(it.pos)}</div>
+    ${it.collocations.length ? `<div class="colls">${it.collocations.map((c) => `<div>${collFront(c)}　<span class="mut">${esc(c.zh)}</span></div>`).join("")}</div>` : ""}
+    <div class="hint">${esc(hintOf(it.ans))}</div>
+    <div class="center small mut">共 ${letters(it.ans)} 個字母</div>
+    <input class="tinput mt" id="inp" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+    <div class="row2 mt"><button class="btn ghost" id="skip">不會（看答案）</button><button class="btn" id="go">確定</button></div>
+    <div id="fb"></div></div>`;
+  const inp = $("inp");
+  inp.focus();   // 要在點擊的同一個事件裡 focus，iOS 才會叫出鍵盤
+  let done = false;
+  const submit = (giveUp) => {
+    if (done) return;
+    if (!giveUp && !inp.value.trim()) return;
+    done = true;
+    const ok = !giveUp && spellOk(it, inp.value);
+    const ms = performance.now() - t0;
+    const g = answerRecall(session.Q, pk, ok, ms, now());
+    const label = g === 1 ? "重來" : `${g === 2 ? "困難" : "良好"}・${Math.round(ms / 1000)} 秒`;
+    main.innerHTML = `<div class="q">
+      <div><span class="grade g${g}">${label}</span>${!ok && !giveUp ? `　<span class="small mut">你拼：${esc(inp.value)}</span>` : ""}</div>
+      ${backHtml(it, 2)}
+      <button class="btn mt" id="nx">下一張</button></div>`;
+    play(it.audio);
+    $("nx").onclick = nextCard;
+    window.scrollTo(0, 0);
+  };
+  $("go").onclick = () => submit(false);
+  $("skip").onclick = () => submit(true);
+  inp.onkeydown = (ev) => { if (ev.key === "Enter") submit(false); };
+}
+
+// 加強卡：同一字今天錯滿 4 次 → 例句＋發音＋照抄 3 次
+function renderBoost(pk) {
+  const it = ITEMS[pk.e.id];
+  main.innerHTML = `<div class="q"><div><span class="tag red">加強卡</span><span class="small mut">這個字今天錯好幾次了，慢慢看、照著打三次</span></div>
+    ${backHtml(it, 3)}
+    <div class="lbl mt">照著打 3 次：${esc(it.ans)}</div>
+    <div class="copy">${[0, 1, 2].map((i) => `<input class="tinput cp" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">`).join("")}</div>
+    <button class="btn mt" id="ok" disabled>完成，回去再拼一次</button></div>`;
+  play(it.audio);
+  const cps = [...main.querySelectorAll(".cp")];
+  cps.forEach((c) => c.oninput = () => {
+    c.classList.toggle("correct", spellOk(it, c.value));
+    $("ok").disabled = !cps.every((x) => spellOk(it, x.value));
+  });
+  $("ok").onclick = () => { finishOther(session.Q, pk, now()); nextCard(); };
+}
+
+/* ---------- 總複習選範圍 ---------- */
+function freePicker() {
+  setHeader("總複習", "選範圍（不影響今天的過關）", true);
+  const day = dayOf(now());
+  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.date <= day).map((b) => b.bank));
+  main.innerHTML = `<div class="card">
+    <div class="lbl">範圍</div>
+    <label class="bank"><input type="checkbox" id="all" checked> 全選</label>
+    ${banks.map((b) => {
+      const its = BANK_ITEMS[b], s = its.filter((i) => seen(i.id)).length;
+      return `<label class="bank"><input type="checkbox" class="bk" value="${b}" checked> ${bankName(b)}<span class="r">${s}/${its.length} 已練</span></label>`;
+    }).join("")}
+    <div class="lbl mt">張數</div>
+    <div class="row2"><button class="btn ghost sz" data-n="10">10 張</button><button class="btn sz" data-n="20">20 張</button></div>
+  </div>`;
+  $("all").onchange = (e) => main.querySelectorAll(".bk").forEach((c) => c.checked = e.target.checked);
+  main.querySelectorAll(".sz").forEach((b) => b.onclick = () => {
+    const sel = new Set([...main.querySelectorAll(".bk:checked")].map((c) => c.value));
+    if (!sel.size) return toast("至少選一個範圍");
+    startSession(buildFree(sel, +b.dataset.n, now()), "free");
+  });
+}
+
+/* ---------- 閱讀 ---------- */
+function readingList() {
+  setHeader("閱讀", "這一回的字都練過一次就解鎖", true);
+  const day = dayOf(now());
+  const banks = DATA.banks.filter((b) => DATA.readings[b] && (LEARNED.includes(b) || SCHEDULE.some((s) => s.bank === b && s.date <= day)));
+  main.innerHTML = `<div class="card list">${banks.map((b) => {
+    const its = BANK_ITEMS[b], d = its.filter((i) => seen(i.id)).length, open = d === its.length;
+    return DATA.readings[b].map((r) => `<a href="#" class="${open ? "" : "lock"}" data-b="${b}" data-r="${esc(r.id)}">
+      <span>${bankName(b)}　${esc(r.title)}</span><span class="small mut">${open ? "閱讀" : `${d}/${its.length} 練過`}</span></a>`).join("");
+  }).join("") || '<div class="mut">還沒有可讀的短文</div>'}</div>`;
+  main.querySelectorAll(".list a").forEach((a) => a.onclick = (e) => { e.preventDefault(); showReading(a.dataset.b, a.dataset.r); });
+}
+function showReading(bank, rid) {
+  const r = DATA.readings[bank].find((x) => x.id === rid);
+  setHeader(r.title, bankName(bank) + "　點紅字聽發音", true);
+  const marks = [];
+  r.words.forEach((w) => w.forms.forEach((f) => marks.push({ f, id: w.id })));
+  marks.sort((a, b) => b.f.length - a.f.length);
+  let text = r.text;
+  const slots = [];
+  marks.forEach((m) => {   // 先換成佔位，避免巢狀取代
+    const src = "\\b" + m.f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+") + "\\b";
+    let hit = false;
+    text = text.replace(new RegExp(src, "g"), (x) => { hit = true; slots.push({ x, ids: [m.id] }); return "\u0000" + (slots.length - 1) + "\u0001"; });
+    // 整個被較長的字／片語吃掉了（filled ⊂ be filled with、take off＝take ... off）→ 掛在同一個紅字上
+    if (!hit) slots.forEach((sl) => { if (!sl.ids.includes(m.id) && new RegExp(src, "i").test(sl.x)) sl.ids.push(m.id); });
+  });
+  const html = esc(text).replace(/\u0000(\d+)\u0001/g, (_, i) => `<span class="w" data-ids="${esc(slots[i].ids.join("|"))}">${esc(slots[i].x)}</span>`);
+  main.innerHTML = `<div class="card reading">${html}</div>`;
+  main.querySelectorAll(".w").forEach((s) => s.onclick = () => {
+    const its = s.dataset.ids.split("|").map((id) => ITEMS[id]);
+    play(its[0].audio); toast(its.map((it) => it.en + "　" + it.zh).join("／"));
+  });
+}
+
+/* ============================================================
+   Supabase SDK（本地 vendored 檔，跟統測字彙 app 同一份；只有 CONFIG 有填才載入）
+   ============================================================ */
+function loadSdk() {
+  if (window.supabase) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "vendor/supabase.js"; s.onload = res; s.onerror = () => rej(new Error("SDK 載入失敗"));
+    document.head.appendChild(s);
+  });
+}
+
+/* ============================================================
+   老師端（?teacher=1）：Supabase 帳號登入 → 選學生 → 儀表板
+   學生進度是學生端寫的資料（較不可信）：畫面上每個字串都要 esc()，只顯示題庫裡有的字
+   ============================================================ */
+let tsb = null;
+const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "—";
+async function tq(p) { const r = await p; if (r.error) throw r.error; return r.data; }
+
+async function teacherBoot() {
+  $("syncSt").textContent = "老師端";
+  $("back").onclick = () => teacherHome();
+  setHeader("老師端", "", false);
+  if (!CLOUD) {
+    main.innerHTML = `<div class="card">還沒接上雲端：<code>index.html</code> 的 CONFIG 是空的。</div><a class="small mut" href="./">← 回學生畫面</a>`;
+    return;
+  }
+  try { await loadSdk(); } catch (e) { main.innerHTML = `<div class="card">連不上網路；老師端需要網路才能看。</div>`; return; }
+  tsb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY,
+    { auth: { storageKey: "tsvt-srs-teacher", persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+  const { data } = await tsb.auth.getSession();
+  if (!data || !data.session) return teacherLogin();
+  teacherHome();
+}
+
+function teacherLogin(msg) {
+  setHeader("老師登入", "用統測字彙 app 的同一組老師帳號", false);
+  main.innerHTML = `<div class="card">
+    <div class="lbl">Email</div><input class="tinput" id="em" type="email" autocomplete="username" autocapitalize="off" style="font-size:17px">
+    <div class="lbl mt">密碼</div><input class="tinput" id="pw" type="password" autocomplete="current-password" style="font-size:17px">
+    <button class="btn mt" id="login">登入</button>
+    ${msg ? `<div class="warn">${esc(msg)}</div>` : ""}</div>
+    <a class="small mut" href="./">← 回學生畫面</a>`;
+  const go = async () => {
+    $("login").disabled = true;
+    const { error } = await tsb.auth.signInWithPassword({ email: $("em").value.trim(), password: $("pw").value });
+    if (error) return teacherLogin(/invalid/i.test(error.message) ? "帳號或密碼不對" : "登入失敗：" + error.message);
+    teacherHome();
+  };
+  $("login").onclick = go;
+  $("pw").onkeydown = (ev) => { if (ev.key === "Enter") go(); };
+}
+
+function linkCard(name, token) {
+  const url = location.origin + location.pathname + "?s=" + token;
+  return `<div class="card"><div class="lbl">「${esc(name)}」的專屬連結</div>
+    <input class="lnk" id="lnk" readonly value="${esc(url)}">
+    <button class="btn mt" id="cp">複製連結</button>
+    <div class="warn">這個連結只會顯示這一次（雲端只存它的指紋）。請私訊給學生本人，不要貼到群組。
+    弄丟了就按「重新產生連結」，舊的會立刻失效（進度不會不見）。</div></div>`;
+}
+function bindCopy() {
+  if (!$("cp")) return;
+  $("cp").onclick = () => {
+    const v = $("lnk").value;
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject())
+      .then(() => toast("已複製"), () => { $("lnk").select(); toast("請長按連結手動複製"); });
+  };
+}
+const logoutHtml = `<button class="btn ghost mt" id="logout">登出</button>`;
+function bindLogout() { if ($("logout")) $("logout").onclick = async () => { await tsb.auth.signOut(); teacherLogin(); }; }
+
+async function teacherHome(flash) {
+  setHeader("老師端", "學生每日練習狀況", false);
+  main.innerHTML = `<div class="card mut">載入中…</div>`;
+  let isT, list, states;
+  try {
+    isT = await tq(tsb.rpc("srs_is_teacher"));
+    if (isT) {
+      list = await tq(tsb.from("srs_students").select("id,name,created_at").order("created_at"));
+      states = await tq(tsb.from("srs_state").select("student_id,updated_at"));
+    }
+  } catch (e) {
+    main.innerHTML = `<div class="card">讀取失敗：${esc(e.message || e)}<div class="small mut mt">第一次用的話，請確認已在 Supabase 執行過 supabase/001_srs.sql。</div></div>${logoutHtml}`;
+    return bindLogout();
+  }
+  if (!isT) {
+    main.innerHTML = `<div class="card">這個帳號沒有老師權限（不在 srs_teachers 名單裡）。</div>${logoutHtml}`;
+    return bindLogout();
+  }
+  const upd = {};
+  states.forEach((s) => { upd[s.student_id] = s.updated_at; });
+  main.innerHTML = (flash || "") + `<div class="card list"><div class="lbl">學生</div>
+    ${list.map((s) => `<a href="#" data-id="${esc(s.id)}" data-name="${esc(s.name)}"><span>${esc(s.name)}</span><span class="small mut">最後同步 ${esc(fmtTime(upd[s.id]))}</span></a>`).join("")
+      || '<div class="mut small">還沒有學生，先在下面新增。</div>'}</div>
+    <div class="card"><div class="lbl">新增學生</div>
+      <input class="tinput" id="nm" maxlength="40" placeholder="暱稱（不要用全名）" style="font-size:17px">
+      <button class="btn blue mt" id="add">新增並產生專屬連結</button></div>
+    ${logoutHtml}`;
+  bindCopy(); bindLogout();
+  main.querySelectorAll(".list a").forEach((a) => a.onclick = (e) => { e.preventDefault(); teacherStudent(a.dataset.id, a.dataset.name); });
+  $("add").onclick = async () => {
+    const name = $("nm").value.trim();
+    if (!name) return toast("先填暱稱");
+    $("add").disabled = true;
+    try {
+      const r = await tq(tsb.rpc("srs_create_student", { p_name: name }));
+      if (!r || !r.ok) throw new Error(r && r.error === "bad_name" ? "暱稱要 1～40 個字" : "新增失敗");
+      teacherHome(linkCard(r.name, r.token));
+    } catch (e) { toast(e.message || "新增失敗"); $("add").disabled = false; }
+  };
+}
+
+async function teacherStudent(id, name, flash) {
+  setHeader(name, "載入中…", true);
+  main.innerHTML = `<div class="card mut">載入中…</div>`;
+  let row;
+  try { row = await tq(tsb.from("srs_state").select("state,updated_at").eq("student_id", id).maybeSingle()); }
+  catch (e) { main.innerHTML = `<div class="card">讀取失敗：${esc(e.message || e)}</div>`; return; }
+  const st = cleanState(row && row.state);
+  setHeader(name, "最後同步 " + fmtTime(row && row.updated_at), true);
+  main.innerHTML = (flash || "") + dashHtml(st, now()) +
+    `<div class="row2"><button class="btn ghost" id="rf">重新整理</button><button class="btn ghost" id="rl">重新產生連結</button></div>`;
+  bindCopy();
+  $("rf").onclick = () => teacherStudent(id, name);
+  $("rl").onclick = async () => {
+    if (!confirm(`重新產生「${name}」的連結？\n舊連結會立刻失效，學生要用新連結重新打開一次（進度不會不見）。`)) return;
+    try {
+      const r = await tq(tsb.rpc("srs_reset_link", { p_student: id }));
+      if (!r || !r.ok) throw new Error("重設失敗");
+      teacherStudent(id, name, linkCard(name, r.token));
+    } catch (e) { toast(e.message || "重設失敗"); }
+  };
+}
+
+// 儀表板（純函式：吃一份進度＋時間 → HTML；selftest 會測）
+function dashHtml(st, t) {
+  const day = dayOf(t), Dt = st.days[day];
+  const Rof = (id, at) => { const c = st.cards[id]; return c ? fsrs.R(Math.max(0, ((at || t) - c.last) / DAY), Math.max(0.1, c.st)) : null; };
+  const pct = (r) => r == null ? "—" : Math.round(r * 100) + "%";
+  const mins = (ms) => Math.round((+ms || 0) / MIN);
+  const failsOf = (id, from) => { let n = 0; for (const d in st.days) if (d >= from && d <= day) n += +st.days[d].fails[id] || 0; return n; };
+  let h = "";
+  // 今天
+  h += `<div class="card"><div class="lbl">今天 ${esc(fmtDay(day))}</div>`;
+  if (!Dt || !Dt.ans) h += `<div class="big">今天還沒開始</div>`;
+  else h += `<div class="big" style="color:${Dt.passed ? "var(--green)" : "var(--red)"}">${Dt.passed ? "今天已過關" : "今天還沒過關"}</div>
+    <div class="small mut">清單 ${Dt.set.length} 張・已過 ${passedCount(Dt)}・作答 ${+Dt.ans} 次・約 ${mins(Dt.ms)} 分鐘</div>`;
+  h += `</div>`;
+  // 近 14 天
+  const cells = [];
+  let nPass = 0, nMin = 0;
+  for (let i = 13; i >= 0; i--) {
+    const d = addDays(day, -i), D = st.days[d];
+    const cls = D && D.passed ? "ok" : D && D.ans ? "part" : "";
+    if (D && D.passed) nPass++;
+    nMin += D ? mins(D.ms) : 0;
+    cells.push(`<div class="${cls}${i === 0 ? " td" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<b>${D && D.passed ? "過" : D && D.ans ? "未完" : "—"}</b>${D && D.ans ? mins(D.ms) + "分" : ""}</div>`);
+  }
+  h += `<div class="card"><div class="lbl">近 14 天</div><div class="cal">${cells.join("")}</div>
+    <div class="small mut mt">過關 ${nPass} 天・共約 ${nMin} 分鐘（綠＝過關、黃＝有做沒做完）</div></div>`;
+  // 本批
+  const b = curBatch(day) || SCHEDULE.find((x) => x.date > day);
+  h += `<div class="card"><div class="lbl">本批準備度</div>`;
+  if (!b || !BANK_ITEMS[b.bank]) h += `<div class="mut">目前沒有排定的新進度</div>`;
+  else {
+    const its = BANK_ITEMS[b.bank], mock = Dt && Dt.mock === b.bank;
+    const exam = Math.max(t, Date.parse(b.testDate + "T19:00:00+08:00"));   // 剛答完的字記憶率一定 100%，看「考試當天」才有意義
+    const stat =(id) => !Dt || !Dt.set.includes(id) ? ["今天沒排", "mut"] : Dt.queue.some((e) => e.id === id) ? ["還沒過", "red"] : ["過了", "green"];
+    const nOk = its.filter((i) => stat(i.id)[0] === "過了").length, nR = its.filter((i) => (Rof(i.id, exam) || 0) >= 0.9).length;
+    h += `<div class="big">${esc(bankName(b.bank))}　${esc(fmtDay(b.testDate))} 上課考</div>
+      <div class="small mut">今天過了 ${nOk}/${its.length}・考試當天預估記憶率 ≥ 90% 的 ${nR}/${its.length}${mock ? `・模擬考第一次對 ${Object.values(Dt.mockFirst).filter(Boolean).length}/${its.length}` : ""}</div>
+      <table class="t mt"><tr><th>字</th><th>今天</th><th class="n">今天錯</th><th class="n">本批累計錯</th><th class="n">考試日記憶率</th>${mock ? '<th class="n">模擬考</th>' : ""}</tr>
+      ${its.map((it) => { const s = stat(it.id); return `<tr><td><b>${esc(it.en)}</b><div class="small mut">${esc(it.zh)}</div></td>
+        <td><span class="tag ${s[1]}">${s[0]}</span></td><td class="n">${Dt ? +Dt.fails[it.id] || 0 : 0}</td><td class="n">${failsOf(it.id, b.date)}</td>
+        <td class="n">${pct(Rof(it.id, exam))}</td>${mock ? `<td class="n">${it.id in Dt.mockFirst ? (Dt.mockFirst[it.id] ? "對" : "錯") : "—"}</td>` : ""}</tr>`; }).join("")}</table>`;
+  }
+  h += `</div>`;
+  // 弱字前 20
+  const weak = Object.keys(st.cards).filter((id) => ITEMS[id]).map((id) => ({ id, lapses: +st.cards[id].lapses || 0, fails: failsOf(id, "") }))
+    .filter((x) => x.lapses + x.fails > 0).sort((a, c) => c.lapses - a.lapses || c.fails - a.fails).slice(0, 20);
+  h += `<div class="card"><div class="lbl">最常忘的字（前 20）</div>${weak.length ? `<table class="t"><tr><th>字</th><th class="n">遺忘次數</th><th class="n">累計拼錯</th><th class="n">記憶率</th></tr>
+    ${weak.map((x) => `<tr><td><b>${esc(ITEMS[x.id].en)}</b> <span class="small mut">${esc(ITEMS[x.id].zh)}</span><div class="small mut">${esc(bankName(ITEMS[x.id].bank))}</div></td>
+      <td class="n">${x.lapses}</td><td class="n">${x.fails}</td><td class="n">${pct(Rof(x.id))}</td></tr>`).join("")}</table>` : '<div class="mut small">還沒有拼錯紀錄</div>'}</div>`;
+  // 各單元記憶率
+  const rows = DATA.banks.map((bk) => {
+    const its = BANK_ITEMS[bk] || [], rs = its.map((i) => Rof(i.id)).filter((r) => r != null);
+    return { bk, n: its.length, seen: rs.length, avg: rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null };
+  }).filter((r) => r.seen);
+  h += `<div class="card"><div class="lbl">各單元目前記憶率（FSRS 估計）</div>${rows.length ? `<table class="t"><tr><th>單元</th><th class="n">練過</th><th>平均記憶率</th></tr>
+    ${rows.map((r) => `<tr><td>${esc(bankName(r.bk))}</td><td class="n">${r.seen}/${r.n}</td><td>${pct(r.avg)}<div class="bar"><div style="width:${Math.round(r.avg * 100)}%"></div></div></td></tr>`).join("")}</table>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
+  // 積欠
+  const tmr = dayStart(addDays(day, 1));
+  const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
+  const fcBanks = LEARNED.concat(SCHEDULE.filter((x) => x.testDate <= day).map((x) => x.bank));
+  const unchecked = fcBanks.reduce((n, bk) => n + (BANK_ITEMS[bk] || []).filter((i) => !st.cards[i.id]).length, 0);
+  h += `<div class="card"><div class="lbl">積欠</div><div class="stat"><div><b>${overdue}</b>到期但今天排不下</div><div><b>${unchecked}</b>舊字還沒首次檢測</div></div></div>`;
+  return h;
+}
+
+/* ============================================================
+   selftest：假時鐘模擬 30 天
+   ============================================================ */
+async function runSelftest() {
+  const out = [], results = [];
+  const check = (name, ok, detail) => { results.push(!!ok); out.push(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "　" + detail : ""}`); };
+  store = { load: () => null, save: () => {} };   // 不碰真實存檔
+  const T = (d, hm) => Date.parse(`${d}T${hm || "19:00"}:00+08:00`);
+
+  // --- FSRS ---
+  S = freshState();
+  check("R(S,S) = 0.9", Math.abs(fsrs.R(10, 10) - 0.9) < 1e-9);
+  check("間隔(S) = S（目標記憶率 0.9）", Math.abs(fsrs.ivl(7) - 7) < 1e-9);
+  check("D 在 1–10", [1, 2, 3, 4].every((g) => fsrs.initD(g) >= 1 && fsrs.initD(g) <= 10) && fsrs.nextD(10, 1) <= 10 && fsrs.nextD(1, 4) >= 1);
+  const s1 = fsrs.recallS(5, 10, 0.9, 3), s2 = fsrs.recallS(5, 10, 0.9, 2), s0 = fsrs.forgetS(5, 10, 0.9);
+  check("良好讓 S 變大、困難較小、重來變小", s1 > s2 && s2 > 10 && s0 < 10, `良好=${s1.toFixed(1)} 困難=${s2.toFixed(1)} 重來=${s0.toFixed(1)}`);
+  check("20 秒分界：20.0 秒良好、20.001 秒困難、拼錯重來", gradeOf(true, 20000) === 3 && gradeOf(true, 20001) === 2 && gradeOf(false, 3000) === 1);
+  let t0 = T("2026-10-03");
+  S.cards.big = { st: 500, df: 3, reps: 9, lapses: 0, last: t0 - 40 * DAY, due: t0 };
+  review("big", 3, t0);
+  check("最大間隔 45 天", S.cards.big.due <= dayStart(addDays("2026-10-03", MAX_IVL)));
+  const tm = T("2027-03-01");
+  S.cards.sw = { st: 300, df: 3, reps: 9, lapses: 0, last: tm - 40 * DAY, due: tm };
+  review("sw", 3, tm);
+  check("考前總掃：3/1 複習的卡會在考前 6 週內到期", dayOf(S.cards.sw.due) >= SWEEP_START && dayOf(S.cards.sw.due) < EXAM_DATE, dayOf(S.cards.sw.due));
+  const tw = T("2027-04-10");
+  S.cards.sw2 = { st: 300, df: 3, reps: 9, lapses: 0, last: tw - 40 * DAY, due: tw };
+  review("sw2", 3, tw);
+  check("總掃期間的卡在考前到期", dayOf(S.cards.sw2.due) < EXAM_DATE, dayOf(S.cards.sw2.due));
+  const leak = DATA.items.filter((it) => it.collocations.some((c) => new RegExp("\\b" + it.ans.split(" ")[0] + "\\b", "i").test(collFront(c))));
+  check("拼寫卡正面（搭配詞挖空）不洩答案", !leak.length, leak.map((i) => i.en).join(", "));
+  const badOpt = DATA.items.filter((it) => { const o = distractors(it); return o.length !== 4 || new Set(o).size !== 4 || !o.includes(it.zh); });
+  check("認得練習 4 個選項、不重複、含正解", !badOpt.length, badOpt.map((i) => i.en).join(", "));
+  check("拼寫判分寬鬆（大小寫、全形、空白、句點）", spellOk(ITEMS["believe"], " Believe. ") && spellOk(ITEMS["believe"], "ｂｅｌｉｅｖｅ") &&
+    spellOk(ITEMS["feel like + ving"], "feel like") && !spellOk(ITEMS["believe"], "belive"));
+
+  // --- 單日隊伍規則（手做一個小隊伍） ---
+  const mkQ = (ids, steps) => ({ queue: ids.map((id) => ({ id, k: "recall", tag: "rev", steps: steps || null, step: 0, hard: 0, after: 0, t: 0 })), ans: 0, fails: {} });
+  const ids6 = DATA.items.slice(0, 6).map((i) => i.id);
+  S = freshState();
+  let t = T("2026-10-20");
+  clock.t = t;
+  ids6.forEach((id) => { S.cards[id] = { st: 5, df: 5, reps: 3, lapses: 0, last: t - 5 * DAY, due: t }; });
+  S.days[dayOf(t)] = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, mock: null, mockFirst: {}, passed: false, ms: 0, lastAct: 0, est: 0, fc: 0, extra: 0 };
+  let Q = mkQ(ids6);
+  answerRecall(Q, pick(Q, t), false, 5000, t);           // 第 1 張拼錯
+  const stAfterAgain = S.cards[ids6[0]].st, repsAfter = S.cards[ids6[0]].reps;
+  const seq = [];
+  for (let k = 0; k < 5; k++) { t += 15e3; const p = pick(Q, t); seq.push(p.e.id); if (p.e.id === ids6[0]) break; answerRecall(Q, p, true, 5000, t); }
+  const back = seq.indexOf(ids6[0]);
+  check("拼錯的卡至少隔 3 張且 ≥ 60 秒才再出", back >= 3 && t - T("2026-10-20") >= 60e3, `隔 ${back} 張、${(t - T("2026-10-20")) / 1000} 秒後再出`);
+  answerRecall(Q, pick(Q, t), true, 5000, t);
+  check("長期排程只吃當天第一次作答（之後拼對不改 FSRS）", S.cards[ids6[0]].st === stAfterAgain && S.cards[ids6[0]].reps === repsAfter);
+  Q = mkQ([ids6[1]]); S.days[dayOf(t)].graded = {};
+  answerRecall(Q, pick(Q, t), false, 5000, t);
+  const p1 = pick(Q, t + 1000);
+  check("只剩這一張時直接出（不讓學生乾等）", p1 && p1.e.id === ids6[1] && p1.early);
+  for (let k = 0; k < 3; k++) answerRecall(Q, pick(Q, t), false, 5000, t);
+  check("同一字錯滿 4 次 → 下一張是加強卡", Q.queue[0].k === "boost" && Q.queue[0].id === ids6[1]);
+  // 加強卡不算一張：看完加強卡後，這個字還要再隔 3 張「真的卡」且 ≥ 60 秒
+  Q = mkQ(ids6.slice(0, 6)); S.days[dayOf(t)].graded = {}; Q.fails[ids6[0]] = 3;
+  let tb = t;
+  answerRecall(Q, pick(Q, tb), false, 5000, tb);
+  tb += 5e3; const pb = pick(Q, tb);
+  finishOther(Q, pb, tb);
+  const tAfterBoost = tb, seqB = [];
+  for (let k = 0; k < 8; k++) { tb += 15e3; const p = pick(Q, tb); seqB.push(p.e.id); if (p.e.id === ids6[0]) break; answerRecall(Q, p, true, 5000, tb); }
+  check("加強卡後：至少隔 3 張真的卡、≥ 60 秒才再考（加強卡不算）", pb.e.k === "boost" && seqB.indexOf(ids6[0]) >= 3 && tb - tAfterBoost >= 60e3,
+    `加強卡後隔 ${seqB.indexOf(ids6[0])} 張、${(tb - tAfterBoost) / 1000} 秒`);
+  // 都還沒到時間：不讓剛出過的同一張馬上再出
+  Q = { queue: [{ id: "a", k: "recall", after: 99, t: t + 10e3 }, { id: "b", k: "recall", after: 99, t: t + 90e3 }], ans: 0, real: 0, fails: {}, lastId: "a" };
+  const pe = pick(Q, t);
+  check("提早出卡時跳過剛出過的那張（還有別張就先出別張）", pe.e.id === "b" && pe.early);
+  // 總複習不碰今天的清單、還沒輸入的新字
+  S = freshState(); t = T("2026-10-08"); clock.t = t;
+  BANK_ITEMS.u8_lower.forEach((it) => { S.intro[it.id] = t - DAY; S.cards[it.id] = { st: 3, df: 5, reps: 1, lapses: 0, last: t - DAY, due: t + DAY }; });
+  const Dfree = today(t);
+  const allBanks = new Set(DATA.banks);
+  const Fq = buildFree(allBanks, 400, t);
+  const leakFree = Fq.queue.filter((e) => Dfree.set.includes(e.id) || (SCHEDULE.some((b) => b.bank === ITEMS[e.id].bank) && !S.intro[e.id]));
+  check("總複習不含今天清單與還沒輸入的新字", Fq.queue.length > 0 && !leakFree.length, `${Fq.queue.length} 張，違規 ${leakFree.length}`);
+  const bid = Dfree.set[0], before2 = JSON.stringify(S.cards[bid]);
+  const Fx = { queue: [{ id: bid, k: "recall", tag: "rev", steps: null, step: 0, hard: 0, after: 0, t: 0 }], ans: 0, real: 0, fails: {}, day: dayOf(t) };
+  answerRecall(Fx, pick(Fx, t), true, 5000, t);
+  check("自由練習答到今天清單的字：不寫 graded、不動 FSRS", Dfree.graded[bid] === undefined && JSON.stringify(S.cards[bid]) === before2);
+  // 新字學習步驟：良好→10 分、困難→重複這一步、重來→回 1 分
+  S = freshState(); t = T("2026-10-20"); clock.t = t;
+  S.days[dayOf(t)] = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, mock: null, mockFirst: {}, passed: false, ms: 0, lastAct: 0, est: 0, fc: 0, extra: 0 };
+  Q = mkQ(["affect"], STEPS);
+  answerRecall(Q, pick(Q, t), true, 5000, t);
+  const e1 = Q.queue[0];
+  check("新字良好 → 下一步（10 分後）", e1.step === 1 && e1.t === t + 10 * MIN);
+  answerRecall(Q, pick(Q, t + 10 * MIN), true, 25000, t + 10 * MIN);
+  check("新字困難 → 重複這一步", Q.queue[0] && Q.queue[0].step === 1 && Q.queue[0].t === t + 20 * MIN);
+  answerRecall(Q, pick(Q, t + 20 * MIN), false, 5000, t + 20 * MIN);
+  check("新字重來 → 回第一步（1 分）", Q.queue[0] && Q.queue[0].step === 0 && Q.queue[0].t === t + 21 * MIN);
+  // 過關閘門
+  S = freshState();
+  t = T("2026-10-04"); clock.t = t;
+  const Dg = today(t);
+  const n0 = Dg.queue.length;
+  let gateEarly = false, k2 = 0;
+  while (Dg.queue.length && k2++ < 500) {
+    const p = pick(Dg, t);
+    const ok = !(k2 === 1 || (p.e.id === Dg.set[0] && k2 < 10));
+    if (p.e.k === "recall") answerRecall(Dg, p, ok, 5000, t); else finishOther(Dg, p, t);
+    if (Dg.passed && Dg.queue.length) gateEarly = true;
+    t += 15e3;
+  }
+  check("過關閘門：每張在最後一次拼錯之後都拼對過才顯示完成", !gateEarly && Dg.passed && !Dg.queue.length, `${n0} 張`);
+
+  // --- 30 天模擬 ---
+  S = freshState();
+  const r = rng(12345);
+  const START = "2026-10-03", DAYS = +qs.get("days") || 40;   // 40 天：涵蓋新進度結束（11/7）後積欠消化、首檢收尾
+  const learnedIds = LEARNED.flatMap((b) => BANK_ITEMS[b].map((i) => i.id));
+  const perDay = [], gapBad = [];
+  let fcAllDay = null, stuck = false, gateBad = 0, multiGrade = 0, earlyAlone = 0;
+  for (let di = 0; di < DAYS; di++) {
+    const day = addDays(START, di);
+    t = T(day); clock.t = t;
+    const D = today(t);
+    const start = t, lastSeen = {};
+    let prevId = null;
+    let guard = 0;
+    for (;;) {
+      const p = pick(D, t);
+      if (!p) break;
+      if (++guard > 1500) { stuck = true; break; }
+      const id = p.e.id;
+      if (p.e.k !== "recall") {
+        finishOther(D, p, t);
+        if (p.e.k === "boost") lastSeen[id] = { wrong: true, real: D.real || 0, t };
+        prevId = id;
+        t += COST[p.e.k] * 1000; clock.t = t; continue;
+      }
+      // 拼錯（或加強卡）後再出：要隔 ≥3 張真的卡且 ≥60 秒；提早出只准在隊伍只剩這個字時
+      // 規則：沒提早 → 一定隔夠；提早 → 必須是「沒有任何一張到時間」且不是剛出過的同一張（只剩它除外）
+      if (lastSeen[id] && lastSeen[id].wrong) {
+        const gapN = (D.real || 0) - lastSeen[id].real, gapT = t - lastSeen[id].t;
+        const alone = D.queue.every((e) => e.id === id);
+        const anyReady = D.queue.some((e) => (D.real || 0) >= e.after && t >= e.t);
+        if (!p.early && (gapN < MIN_GAP || gapT < 60e3)) gapBad.push(`${day} ${id} 隔${gapN}張${gapT / 1000}秒`);
+        if (p.early) {
+          earlyAlone++;
+          if (anyReady || (prevId === id && !alone)) gapBad.push(`${day} ${id} 提早出但${anyReady ? "有別張到時間" : "是剛出過的同一張"}`);
+        }
+      }
+      prevId = id;
+      const repeat = D.graded[id] !== undefined;
+      const pOk = p.e.tag === "fc" && !repeat ? 0.7 : repeat ? 0.75 : 0.85;
+      const ok = r() < pOk;
+      const ms = ok ? (r() < 0.2 ? 25000 : 9000) : 12000;
+      const before = reviewCalls;
+      answerRecall(D, p, ok, ms, t);
+      if (repeat && reviewCalls !== before) multiGrade++;
+      lastSeen[id] = { wrong: !ok, real: D.real || 0, t };
+      if (D.passed && D.queue.length) gateBad++;
+      t += ms + 4000; clock.t = t;
+    }
+    perDay.push({ day, paused: D.fcPaused, set: D.set.length, est: Math.round(D.est / 60), forced: D.forcedEst >= D.est, min: Math.round((t - start) / MIN), ans: D.ans, fc: D.fc, passed: D.passed,
+      boosts: Object.values(D.boosts).reduce((a, b) => a + b, 0),
+      backlog: Object.values(S.cards).filter((c) => c.due < dayStart(addDays(day, 1))).length - D.set.filter((id) => S.cards[id] && S.cards[id].due < dayStart(addDays(day, 1))).length });
+    if (fcAllDay == null && learnedIds.every(seen)) fcAllDay = di + 1;
+  }
+  clock.t = null;
+  check("模擬沒有卡死（每天都做得完）", !stuck);
+  check("每天結束都過關（閘門只在全部拼對後打開）", perDay.every((x) => x.passed) && !gateBad);
+  // (a) 本批每天都出現
+  const missA = [];
+  SCHEDULE.forEach((b) => {
+    for (let d = b.date; d < b.testDate; d = addDays(d, 1)) {
+      if (!S.days[d]) continue;
+      BANK_ITEMS[b.bank].forEach((it) => { if (S.days[d].graded[it.id] === undefined) missA.push(`${d} ${it.id}`); });
+    }
+  });
+  check("(a) 本批 18 項考前每天都拼到", !missA.length, missA.slice(0, 5).join(", "));
+  // (b) 份量
+  const overB = perDay.filter((x) => x.est * 60 > BUDGET_SEC + 60 && !x.forced);
+  check(`(b) 每天清單估計 ≤ ${BUDGET_SEC / 60} 分鐘（超過的只能是本批強制）`, !overB.length,
+    `估計分鐘 ${perDay.map((x) => x.est).join(",")}；模擬實際分鐘 ${perDay.map((x) => x.min).join(",")}`);
+  // (c) 舊字首檢
+  // 目標原本是 ~25 天；但「積欠 > 30 張就暫停首檢」在新進度期間幾乎每隔一天觸發 → 實際約 37 天（新進度結束後才收尾）
+  check(`(c) 已學 ${learnedIds.length} 項全部首檢（積欠複習 > ${BACKLOG_PAUSE} 張的日子暫停首檢；目標 ~25 天，容許到 40 天）`, fcAllDay != null && fcAllDay <= 40,
+    `第 ${fcAllDay} 天完成；逐日 ${perDay.map((x) => x.fc).join(",")}；暫停首檢 ${perDay.filter((x) => x.paused).map((x) => x.day.slice(5)).join(" ") || "無"}`);
+  const d30 = perDay[Math.min(29, perDay.length - 1)].backlog, maxBacklog = Math.max(...perDay.map((x) => x.backlog));
+  check("(f) 積欠的到期複習有上限（第 30 天 ≤ 60 張）", d30 <= 60,
+    `第 30 天留到明天 ${d30} 張；期間最多 ${maxBacklog} 張；第 ${perDay.length} 天 ${perDay[perDay.length - 1].backlog} 張`);
+  // (d) 拼錯後至少隔 3 張、60 秒
+  check("(d) 拼錯的卡隔 ≥3 張真的卡且 ≥60 秒再出；提早出只在沒有任何一張到時間時、且不重出剛出過的同一張", !gapBad.length,
+    gapBad.length ? gapBad.slice(0, 5).join("; ") : `提早出 ${earlyAlone} 次（都是其他卡也還在等）`);
+  check("(e) 長期排程每字每天只評一次", !multiGrade);
+  await syncSelftest(check, T);
+  out.push("\n逐日明細（張數／估計分／模擬分／作答次／首檢／加強卡／留到明天）：\n" +
+    perDay.map((x) => `${x.day} ${x.set}張 估${x.est}分 實${x.min}分 答${x.ans} 首檢${x.fc} 加強${x.boosts} 留${x.backlog}${x.forced ? " ＊本批佔滿" : ""}`).join("\n"));
+  const pass = results.every(Boolean);
+  out.unshift(pass ? `SELFTEST PASS（${results.length} 項）` : `SELFTEST FAIL（${results.filter((x) => !x).length}/${results.length} 項失敗）`);
+  setHeader("selftest", pass ? "全部通過" : "有失敗", false);
+  main.innerHTML = `<pre id="selftest" data-pass="${pass}">${esc(out.join("\n"))}</pre>`;
+  console.log(out.join("\n"));
+  S = freshState();
+}
+
+/* ---------- 雲端同步 selftest：假伺服器（照 supabase/001_srs.sql 的 srs_load / srs_save 規則），完全不連網 ---------- */
+function mockServer() {
+  const rows = {}, J = (x) => JSON.parse(canon(x));   // 模擬 jsonb：存進去再拿出來，key 順序會變
+  const srv = { rows, maxPatch: 2000000, maxState: 4000000,
+    add(tk, name) { rows[tk] = { sid: "sid-" + name, name, rev: 0, state: J(freshState()) }; },
+    call(n, a) {
+      const row = TOKEN_RE.test(a.p_token || "") && rows[a.p_token];
+      if (!row) return { ok: false, error: "invalid_link" };
+      if (n === "srs_load") return a.p_rev != null && a.p_rev === row.rev
+        ? { ok: true, sid: row.sid, name: row.name, rev: row.rev, unchanged: true }
+        : { ok: true, sid: row.sid, name: row.name, rev: row.rev, state: J(row.state) };
+      if (n !== "srs_save") throw new Error("unknown rpc " + n);
+      const p = a.p_patch;
+      if (!isObj(p) || Object.keys(p).some((k) => !["cards", "intro", "days", "log"].includes(k))) return { ok: false, error: "bad_patch" };
+      if (JSON.stringify(p).length > srv.maxPatch) return { ok: false, error: "too_large" };
+      if (a.p_base_rev !== row.rev) return { ok: false, error: "conflict", rev: row.rev, state: J(row.state) };
+      if (!Object.keys(p).length) return { ok: true, rev: row.rev };
+      const s = J(row.state);
+      ["cards", "intro", "days"].forEach((k) => { if (p[k]) Object.assign(s[k], J(p[k])); });
+      if (p.log) {
+        const m = new Map();
+        s.log.concat(J(p.log)).forEach((e) => { if (!m.has(logKey(e))) m.set(logKey(e), e); });
+        s.log = [...m.values()].sort((x, y) => x.t - y.t || (x.id < y.id ? -1 : 1)).slice(-LOG_CAP);
+      }
+      if (JSON.stringify(s).length > srv.maxState) return { ok: false, error: "too_large" };
+      row.state = s; row.rev++;
+      return { ok: true, rev: row.rev };
+    } };
+  return srv;
+}
+
+async function syncSelftest(check, T) {
+  const r2 = rng(4242);
+  // --- 合併規則（純函式） ---
+  const C = (last, reps, due) => ({ st: 3, df: 5, reps, lapses: 0, last, due });
+  const dayObj = (ans, passed, ms) => ({ set: [], queue: [], ans, graded: {}, fails: {}, boosts: {}, mockFirst: {}, passed, ms });
+  const A = freshState(), B = freshState();
+  A.cards.x = C(100, 2, 500); B.cards.x = C(200, 3, 900);
+  A.cards.y = C(300, 4, 700); B.cards.y = C(250, 5, 600);
+  A.cards.z = C(100, 2, 900); B.cards.z = C(100, 2, 400);
+  A.cards.onlyA = C(1, 1, 1); B.cards.onlyB = C(1, 1, 1);
+  let m = mergeState(A, B);
+  const m2 = mergeState(B, A);
+  check("同步／合併：每張卡留最後作答較新的（兩個方向結果一樣、兩邊獨有的都留）",
+    m.cards.x === B.cards.x && m.cards.y === A.cards.y && canon(m.cards) === canon(m2.cards) && m.cards.onlyA && m.cards.onlyB);
+  check("同步／合併：同一次作答時留到期較早的（「昨天沒過→今天到期」不被蓋掉）", m.cards.z === B.cards.z && m2.cards.z === B.cards.z);
+  A.days["2026-10-05"] = dayObj(30, true, 9e5); B.days["2026-10-05"] = dayObj(40, false, 9e5);
+  A.days["2026-10-06"] = dayObj(10, false, 1e5); B.days["2026-10-06"] = dayObj(12, false, 1e5);
+  A.days["2026-10-04"] = dayObj(8, false, 0); B.days["2026-10-04"] = Object.assign(dayObj(5, false, 0), { closed: true });
+  m = mergeState(A, B);
+  check("同步／合併：同一天留進度較多的（過關 > 作答次數 > 分鐘）", m.days["2026-10-05"] === A.days["2026-10-05"] && m.days["2026-10-06"] === B.days["2026-10-06"]);
+  check("同步／合併：任一邊已結算（closed）就保持結算", m.days["2026-10-04"] === A.days["2026-10-04"] && m.days["2026-10-04"].closed === true);
+  m = mergeState(A, B, "2026-10-06");
+  check("同步／合併：作答中的那天一律留這台（隊伍物件不被換掉）", m.days["2026-10-06"] === A.days["2026-10-06"]);
+  A.log = [{ t: 1, id: "a" }, { t: 3, id: "b" }]; B.log = [{ t: 2, id: "c" }, { t: 3, id: "b" }];
+  check("同步／合併：作答紀錄聯集、以時間＋字去重、依時間排", mergeState(A, B).log.map(logKey).join() === "1|a,2|c,3|b");
+  A.log = Array.from({ length: 4000 }, (_, i) => ({ t: i * 2, id: "a" }));
+  B.log = Array.from({ length: 4000 }, (_, i) => ({ t: i * 2 + 1, id: "b" }));
+  m = mergeState(A, B);
+  check("同步／合併：作答紀錄上限 5000 筆（留最新的）", m.log.length === LOG_CAP && m.log[LOG_CAP - 1].t === 7999 && m.log[0].t === 8000 - LOG_CAP);
+  const sn = freshState(), lo = freshState();
+  sn.cards.a = C(100, 2, 900); lo.cards.a = C(100, 2, 400);   // 同一次作答、本機到期較早（隔天結算把沒過的字提前）→ 要送
+  sn.cards.b = C(200, 3, 900); lo.cards.b = C(100, 2, 400);   // 本機較舊 → 不送
+  sn.days["2026-10-05"] = dayObj(20, true, 9e5); lo.days["2026-10-05"] = Object.assign(dayObj(5, false, 1e5), { closed: true });
+  const pd = diffState(lo, sn), pdd = (pd.days || {})["2026-10-05"];
+  check("同步／上傳：本機較新才送；只多了「已結算」→ 送雲端那天＋結算記號（不拿本機較少的進度去蓋）",
+    Object.keys(pd.cards || {}).join() === "a" && pdd && pdd.closed === true && pdd.ans === 20 && pdd.passed === true && !sn.days["2026-10-05"].closed);
+  const cl = cleanState(JSON.parse('{"cards":{"ok":{"st":1,"df":1,"reps":1,"lapses":0,"last":1,"due":1},"bad":{"st":"x"},' +
+    '"__proto__":{"st":1,"df":1,"reps":1,"lapses":0,"last":1,"due":1}},"days":{"2026-10-01":{"set":[],"queue":[],"ans":1,"graded":{},"fails":{},' +
+    '"boosts":{},"mockFirst":{},"ms":0},"<img>":{},"2026-10-02":{"set":"x"}},"log":[{"t":1,"id":"a"},{"t":"x"}],"intro":{"a":1,"b":"x"}}'));
+  check("同步／雲端資料清洗：形狀不對、__proto__、怪日期都丟掉",
+    Object.keys(cl.cards).join() === "ok" && Object.keys(cl.days).join() === "2026-10-01" && cl.log.length === 1 &&
+    Object.keys(cl.intro).join() === "a" && Object.getPrototypeOf(cl.cards) === Object.prototype);
+
+  // --- 多台裝置 × 假伺服器 ---
+  const srv = mockServer(), TK = "0123456789abcdef0123456789abcdef", TK2 = "fedcba9876543210fedcba9876543210";
+  srv.add(TK, "測試生");
+  const mkDev = () => reopen({ S: freshState(), meta: null, keep: null, st: "", asks: [], answer: true, offline: false, calls: [] });
+  const reopen = (dv) => {   // 重開網頁：本機存檔（dv.S）跟同步紀錄（dv.meta）照舊，記憶體裡的東西重來
+    dv.sync = makeSync({
+      rpc: async (n, a) => { dv.calls.push(n); if (dv.offline) throw { offline: true }; return srv.call(n, JSON.parse(JSON.stringify(a))); },
+      getS: () => dv.S, setS: (x) => { dv.S = x; }, saveLocal: () => {},
+      metaLoad: () => dv.meta, metaSave: (x) => { dv.meta = JSON.parse(JSON.stringify(x)); },
+      status: (c) => { dv.st = c; }, keepDay: () => dv.keep, todayKey: () => dayOf(now()),
+      ask: async (k) => { dv.asks.push(k); return dv.answer; }, onMerged: () => {},
+    });
+    return dv;
+  };
+  const playDev = (dv, day, n, okP, hm) => {   // 用 App 本身的作答流程，在這台做 n 張
+    S = dv.S;
+    let t = T(day, hm); clock.t = t;
+    const D = today(t);
+    for (let k = 0; k < n; k++) {
+      const p = pick(D, t);
+      if (!p) break;
+      if (p.e.k === "recall") answerRecall(D, p, r2() < okP, 8000, t); else finishOther(D, p, t);
+      t += 13000; clock.t = t;
+    }
+    dv.S = S;
+  };
+  const same = (a, b) => canon(a.cards) === canon(b.cards) && canon(a.days) === canon(b.days) && canon(a.log) === canon(b.log) && canon(a.intro) === canon(b.intro);
+  const srvS = () => srv.rows[TK].state;
+
+  const phone = mkDev();
+  phone.sync.setToken(TK); await phone.sync.pull();
+  check("同步：空雲端＋空手機第一次同步成功（不用問）", phone.meta.pulled && phone.st === "ok" && !phone.asks.length);
+  playDev(phone, "2026-10-07", 40, 0.8);
+  await phone.sync.push();
+  check("同步：手機作答後上傳 → 雲端跟手機一樣", same(phone.S, srvS()) && phone.st === "ok", `雲端版本 ${srv.rows[TK].rev}`);
+
+  const revBefore = srv.rows[TK].rev, nBefore = Object.keys(srvS().cards).length;
+  const tablet = mkDev();
+  tablet.sync.setToken(TK); await tablet.sync.pull();
+  check("同步：空的新裝置打開連結 → 拿到雲端進度、完全沒上傳、雲端不變",
+    same(tablet.S, phone.S) && srv.rows[TK].rev === revBefore && Object.keys(srvS().cards).length === nBefore &&
+    !tablet.calls.includes("srs_save") && !tablet.asks.length);
+  check("同步：雲端打亂 key 順序不會被誤判成「有改」（下載後待上傳是空的）", !Object.keys(diffState(tablet.S, tablet.sync.snapshot())).length);
+
+  // 分岔：手機離線做 10 張、平板同一天晚點做 25 張
+  phone.offline = true;
+  playDev(phone, "2026-10-08", 10, 0.8, "18:00");
+  await phone.sync.push();
+  check("同步：離線時上傳失敗 → 顯示離線、本機進度還在", phone.st === "offline" && phone.S.days["2026-10-08"].ans === 10);
+  playDev(tablet, "2026-10-08", 25, 0.8, "20:00");
+  await tablet.sync.push();
+  const pC = JSON.parse(JSON.stringify(phone.S.cards)), tC = JSON.parse(JSON.stringify(tablet.S.cards));
+  const allLog = phone.S.log.concat(tablet.S.log).map(logKey);
+  phone.offline = false;
+  await phone.sync.push();          // 版本過期 → conflict → 合併後重送
+  await tablet.sync.pull();
+  const ids = new Set(Object.keys(pC).concat(Object.keys(tC)));
+  const lastOk = [...ids].every((id) => srvS().cards[id] && srvS().cards[id].last === Math.max((pC[id] || { last: 0 }).last, (tC[id] || { last: 0 }).last));
+  const srvLog = new Set(srvS().log.map(logKey));
+  check("同步：兩台分岔後收斂 → 手機、平板、雲端三方一致", same(phone.S, tablet.S) && same(phone.S, srvS()), `雲端版本 ${srv.rows[TK].rev}`);
+  check("同步：收斂後每張卡都是較新的那份，一張都沒少", lastOk && Object.keys(srvS().cards).length === ids.size);
+  check("同步：收斂後兩台的作答紀錄都在", allLog.every((k) => srvLog.has(k)));
+  check("同步：同一天兩台都有做 → 留進度多的（平板 25 次）", srvS().days["2026-10-08"].ans === 25);
+
+  // 之後每次上傳只送改過的部分
+  playDev(tablet, "2026-10-09", 1, 1, "19:00"); await tablet.sync.push();
+  playDev(tablet, "2026-10-09", 1, 1, "19:05");
+  const pt = diffState(tablet.S, tablet.sync.snapshot()), ptLen = JSON.stringify(pt).length;
+  check("同步：答一題只上傳那張卡＋今天＋1 筆紀錄（不是整包）",
+    Object.keys(pt.cards || {}).length <= 1 && Object.keys(pt.days || {}).join() === "2026-10-09" && (pt.log || []).length === 1 && ptLen < 15000,
+    `${ptLen} bytes（整包 ${JSON.stringify(tablet.S).length}）`);
+  await tablet.sync.push();
+
+  // 作答中的那天：雲端較新也不換掉這台的隊伍物件
+  await phone.sync.pull();
+  phone.keep = "2026-10-09";
+  const ref = phone.S.days["2026-10-09"];
+  playDev(tablet, "2026-10-09", 3, 1, "19:30"); await tablet.sync.push();
+  await phone.sync.pull();
+  check("同步：作答中合併 → 今天的隊伍物件還是同一個（作答不會錯位）", !!ref && phone.S.days["2026-10-09"] === ref);
+  phone.keep = null;
+
+  // 沒成功下載過雲端 → 絕不上傳
+  const off = mkDev(); off.offline = true;
+  playDev(off, "2026-10-09", 6, 0.8, "22:00");
+  const offCards = JSON.parse(JSON.stringify(off.S.cards));
+  off.sync.setToken(TK); await off.sync.pull(); await off.sync.push();
+  check("同步：還沒成功下載過雲端 → 一律不上傳", !off.meta.pulled && off.calls.every((c) => c === "srs_load"), off.calls.join(","));
+  off.offline = false; off.answer = true;
+  await off.sync.pull();
+  check("同步：本機已有紀錄的裝置第一次連結 → 先問；選合併 → 這台的紀錄併進雲端",
+    off.asks.join() === "bind" && Object.keys(offCards).every((id) => srvS().cards[id] && srvS().cards[id].last >= offCards[id].last) && same(off.S, srvS()));
+  const rep = mkDev(); rep.answer = false;
+  playDev(rep, "2026-10-09", 6, 0.8, "23:00");
+  const revR = srv.rows[TK].rev;
+  rep.sync.setToken(TK); await rep.sync.pull();
+  check("同步：選「以雲端為準」→ 這台換成雲端進度、雲端不被改", rep.asks.join() === "bind" && same(rep.S, srvS()) && srv.rows[TK].rev === revR);
+
+  // 換成另一位學生的連結
+  srv.add(TK2, "另一生");
+  phone.answer = false;
+  phone.sync.setToken(TK2); await phone.sync.pull();
+  check("同步：換成別的學生連結、按取消 → 維持原本的學生", phone.meta.token === TK && phone.asks.join() === "switch");
+  phone.answer = true;
+  phone.sync.setToken(TK2); await phone.sync.pull();
+  check("同步：換學生按確定 → 改用新學生的雲端進度（不把舊學生的進度灌進去）",
+    phone.meta.token === TK2 && same(phone.S, srv.rows[TK2].state) && !Object.keys(srv.rows[TK2].state.cards).length);
+
+  // 錯誤處理
+  const bad = mkDev();
+  bad.sync.setToken("ffffffffffffffffffffffffffffffff"); await bad.sync.pull();
+  check("同步：錯的連結 → 顯示「連結已失效」、不上傳", bad.st === "invalid" && !bad.calls.includes("srs_save"));
+  check("同步：格式不對的代碼（含 HTML）直接不收", !bad.sync.setToken("<script>") && !bad.sync.setToken("abc"));
+  srv.maxPatch = 50;
+  playDev(tablet, "2026-10-10", 2, 1, "19:00"); await tablet.sync.push();
+  check("同步：上傳太大被雲端拒收 → 顯示錯誤、本機不受影響", tablet.st === "toolarge" && tablet.S.days["2026-10-10"].ans === 2);
+  srv.maxPatch = 2000000;
+
+  // 上傳絕不讓雲端倒退（另一位學生，跟上面互不影響）
+  const TK3 = "00112233445566778899aabbccddeeff", s3 = () => srv.rows[TK3].state;
+  srv.add(TK3, "倒退測試");
+  const dA = mkDev(), dB = mkDev();
+  dA.sync.setToken(TK3); await dA.sync.pull();
+  dB.sync.setToken(TK3); await dB.sync.pull();
+  playDev(dA, "2026-10-11", 40, 0.8, "19:00"); await dA.sync.push();
+  await dB.sync.pull();
+  // (1) 別台已經過關的那天：作答中的這台（進度較少）合併時保留自己的隊伍，但不能把它傳上去蓋掉雲端
+  const DK = "2026-10-12";
+  playDev(dB, DK, 5, 0.8, "18:00");
+  dB.keep = DK;
+  playDev(dA, DK, 400, 1, "19:00"); await dA.sync.push();
+  const dayA = JSON.parse(JSON.stringify(dA.S.days[DK]));
+  await dB.sync.pull();
+  dB.keep = null;
+  check("同步：作答中保留這台進度較少的那天 → 不會蓋掉別台已過關的雲端那天",
+    dayA.passed && s3().days[DK].passed === true && s3().days[DK].ans === dayA.ans && dB.S.days[DK].ans === 5,
+    `雲端 ${DK}：過關 ${s3().days[DK].passed}、作答 ${s3().days[DK].ans}（平板 ${dayA.ans}）`);
+  await dB.sync.pull(); await dA.sync.pull();
+  // (2) 本機存檔倒退（存檔失敗但同步紀錄有存到／從備份還原），重開網頁 → 不能拿舊卡蓋掉雲端較新的卡
+  const oldS = JSON.parse(JSON.stringify(dA.S));
+  playDev(dA, "2026-10-13", 30, 0.8, "19:00"); await dA.sync.push();
+  const cloudBefore = JSON.parse(JSON.stringify(s3()));
+  dA.S = oldS; reopen(dA);
+  await dA.sync.pull(); await dA.sync.push();
+  const regressed = Object.keys(cloudBefore.cards).filter((id) => !s3().cards[id] || s3().cards[id].last < cloudBefore.cards[id].last);
+  check("同步：本機存檔倒退後重開 → 雲端每張卡都沒變舊、今天的進度沒變少",
+    !regressed.length && s3().days["2026-10-13"].ans === cloudBefore.days["2026-10-13"].ans, `變舊 ${regressed.length} 張`);
+  check("同步：本機存檔倒退後重開 → 這台把雲端較新的進度拿回來", same(dA.S, s3()));
+  playDev(dA, "2026-10-14", 12, 0.8, "19:00"); await dA.sync.push();
+  check("同步：上傳後這台記得的雲端那包跟雲端一模一樣、沒有待上傳（不會一直重送）",
+    same(dA.sync.snapshot(), s3()) && !Object.keys(diffState(dA.S, dA.sync.snapshot())).length && dA.st === "ok");
+
+  // 老師儀表板
+  const tt = T("2026-10-09", "21:00");
+  const html = dashHtml(cleanState(srvS()), tt);
+  check("老師儀表板：算得出來、沒有 undefined / NaN", html.includes("近 14 天") && html.includes("本批準備度") && !/undefined|NaN/.test(html));
+  const evil = cleanState(srvS());
+  evil.cards['<img src=x onerror=alert(1)>'] = C(1, 9, 1);
+  evil.days["2026-10-09"].fails["<script>alert(1)<\/script>"] = 99;
+  check("老師儀表板：學生端寫進來的怪字串不會變成 HTML", !/<img src=x|<script>/i.test(dashHtml(evil, tt)));
+  clock.t = null;
+}
+
+/* ============================================================
+   啟動
+   ============================================================ */
+const SYNC_TEXT = { local: "進度存在這台裝置", nolink: "只存在這台裝置・點這裡連結雲端", busy: "同步中…", pending: "同步中…",
+  offline: "離線，稍後同步", invalid: "連結已失效・點這裡貼上老師給的新連結", error: "雲端同步出錯，稍後會再試", toolarge: "雲端存檔太大，請告訴老師" };
+let sync = null, syncCode = "local";
+function setSync(code) {
+  syncCode = code;
+  const el = $("syncSt");
+  el.textContent = code === "ok" ? "已同步 " + new Date().toLocaleTimeString("zh-TW", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false })
+    : SYNC_TEXT[code] || "";
+  el.classList.toggle("act", code === "nolink" || code === "invalid");
+}
+let sbStudent = null;
+async function studentRpc(name, args) {
+  if (!sbStudent) {
+    await loadSdk();
+    sbStudent = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY,
+      { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  }
+  const r = await Promise.race([sbStudent.rpc(name, args), new Promise((_, rej) => setTimeout(() => rej({ offline: true }), 15000))]);
+  if (r.error) throw { offline: !r.error.code, message: r.error.message };   // 沒有錯誤碼＝網路斷了
+  return r.data;
+}
+
+async function bootStudent() {
+  // 雲端模式下用 ?today= 測試：另存一份、不同步（假日期的紀錄不能混進學生真正的進度）
+  const testDay = CLOUD && !!qs.get("today");
+  if (testDay) store = {
+    load() { try { return JSON.parse(localStorage.getItem(STORE_KEY + "-test")); } catch (e) { return null; } },
+    save(st) { try { localStorage.setItem(STORE_KEY + "-test", JSON.stringify(st)); } catch (e) { console.warn("存檔失敗", e); } },
+  };
+  const saved = store.load();
+  if (saved && saved.v === 2) S = Object.assign(freshState(), saved);
+  if (testDay) $("syncSt").textContent = "測試日期模式：另存一份、不同步雲端";
+  else if (CLOUD) {
+    $("tlink").innerHTML = ' ‧ <a href="?teacher=1">老師</a>';
+    const local = syncAdapter;
+    sync = makeSync({
+      rpc: studentRpc,
+      getS: () => S, setS: (x) => { S = x; }, saveLocal: () => local.save(S),
+      metaLoad: () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY)); } catch (e) { return null; } },
+      metaSave: (m) => { try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch (e) { console.warn("同步紀錄存不了", e); } },
+      status: setSync,
+      keepDay: () => session ? dayOf(now()) : null,
+      todayKey: () => dayOf(now()),
+      ask: async (kind, info) => confirm(kind === "switch"
+        ? `這台裝置原本連結的是「${info.from || "另一位學生"}」，要換成「${info.to}」嗎？\n\n換了之後這台會改用「${info.to}」的雲端進度（原本還沒同步上去的紀錄會不見）。`
+        : `這台裝置已經有練習紀錄（${info.n} 個字）。\n\n要把它合併到「${info.to}」的雲端進度嗎？\n確定＝合併（學生自己的手機選這個）\n取消＝這台改用雲端進度（這台原本的紀錄會被取代）`),
+      onMerged: (first, stale) => {
+        if (session) return;
+        if (first && stale) delete S.days[dayOf(now())];   // 今天的清單是合併前用舊資料排的、還沒動過 → 重排
+        if (first || $("goFree")) home();
+      },
+    });
+    store = { load: () => local.load(), save: (st) => { local.save(st); sync.schedule(); } };
+    if (qs.has("s")) {   // 代碼存進這台後就從網址拿掉（避免截圖、分享網址時外流）
+      sync.setToken((qs.get("s") || "").toLowerCase());
+      const u = new URL(location.href); u.searchParams.delete("s");
+      history.replaceState(null, "", u.pathname + u.search + u.hash);
+    }
+    $("syncSt").onclick = async () => {
+      if (syncCode !== "nolink" && syncCode !== "invalid") return;
+      if (session) return toast("先回首頁再連結");
+      const v = (prompt("貼上老師給的連結") || "").trim().toLowerCase();
+      const mt = v.match(/[?&]s=([0-9a-f]{32})\b/) || v.match(/^([0-9a-f]{32})$/);
+      if (!mt) { if (v) toast("看不懂這個連結"); return; }
+      sync.setToken(mt[1]);
+      await sync.pull();
+      if (!session) home();
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") sync.push();
+      else if (!session) sync.pull();
+    });
+    window.addEventListener("online", () => sync.pull());
+    if (sync.meta().token) {
+      const first = !sync.meta().pulled;
+      if (first) main.innerHTML = `<div class="card mut">第一次跟雲端同步進度…</div>`;
+      await Promise.race([sync.pull(), new Promise((r) => setTimeout(r, first ? 10000 : 3000))]);
+    } else setSync("nolink");
+  }
+  home();
+}
+
+fetch("data/cards.json").then((r) => r.json()).then((d) => {
+  indexData(d);
+  if (qs.get("selftest") === "1") return runSelftest();
+  if (qs.get("teacher") === "1") return teacherBoot();
+  return bootStudent();
+}).catch((e) => { main.innerHTML = `<div class="card">資料載入失敗：${esc(e.message)}</div>`; console.error(e); });
+
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
