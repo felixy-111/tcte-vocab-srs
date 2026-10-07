@@ -100,7 +100,7 @@
   .cal div{border-radius:8px; padding:5px 2px; font-size:11px; background:#F1F4F8; color:#7a8a9c; line-height:1.35;}
   .cal div b{display:block; font-size:13px;}
   .cal .ok{background:#E5F6EC; color:#1e7d46;} .cal .part{background:#FFF4D6; color:#9A6B00;}
-  .cal .td{outline:2px solid var(--navy);}
+  .cal .td{outline:2px solid var(--navy);} .cal .jm{display:block; color:var(--blue);}
   table.t{width:100%; border-collapse:collapse; font-size:13px;}
   table.t th{font-size:11px; color:var(--mut); font-weight:600; text-align:left; padding:4px 3px; border-bottom:1px solid #E3EAF3;}
   table.t td{padding:6px 3px; border-bottom:1px solid #EEF2F7; vertical-align:top;}
@@ -411,12 +411,16 @@ function makeSync(o) {
       M.sid = r.sid; M.name = r.name; prevMeta = null;
       const stale = adopt(cleanState(r.state), r.rev);
       o.onMerged(first, stale);
-    } else if (snap && !o.keepDay() && Object.keys(diffState(snap, o.getS())).length) {
-      // 雲端沒變，但之前作答中合併時這台整天留了自己的（keepDay）→ 現在沒在作答，把雲端較新的部分補回這台
-      // （例：統測作答中收到另一台的國中字進度；不補的話這台會以為今天國中字還沒排、重排一份）
-      o.onMerged(false, adopt(JSON.parse(JSON.stringify(snap)), M.rev));
-    }
+    } else settle();
     return doPush(0);
+  }
+
+  // 之前作答中合併時這台整天留了自己的（keepDay）→ 現在沒在作答了：把記得的雲端那包裡較新的部分補回這台（不連網）
+  // 例：統測作答中收到另一台的國中字進度；不補的話作答結束回首頁時會以為今天國中字還沒排、重排一份 → 同一天重複複習
+  function settle() {
+    if (!snap || o.keepDay() || !Object.keys(diffState(snap, o.getS())).length) return false;
+    o.onMerged(false, adopt(JSON.parse(JSON.stringify(snap)), M.rev));
+    return true;
   }
 
   async function doPush(tries) {
@@ -464,7 +468,7 @@ function makeSync(o) {
   return {
     pull: () => run(doPull),
     push: () => { clearTimeout(timer); since = 0; return run(() => doPush(0)); },
-    schedule, setToken,
+    schedule, setToken, settle,
     meta: () => M, snapshot: () => snap,
   };
 }
@@ -564,7 +568,7 @@ const today = (t) => S.days[dayOf(t)] || buildDay(dayOf(t));
    - 到期複習先（記憶率最低的先），再來沒見過的字（官方字表順序，每天 ≤ 40）
    - 認得卡＝英→中四選一；最近 30 天有 2 天以上第一次就錯（＝常忘）→ 改考拼寫
    ============================================================ */
-const isClassDay = (D, day) => D.queue.some((e) => e.k === "input") || D.set.some((id) => S.intro[id] && dayOf(S.intro[id]) === day);
+const isClassDay = (D, day, st = S) => D.queue.some((e) => e.k === "input") || D.set.some((id) => st.intro[id] && dayOf(st.intro[id]) === day);
 function buildJh(day, D, t, budget = JH_BUDGET_SEC) {   // budget：selftest 測首檢上限用
   const J = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, passed: false, passedAt: 0, ms: 0, lastAct: 0, est: 0, fc: 0 };
   const forgot = forgotCounts(S.log, t), t0 = dayStart(day), t1 = dayStart(addDays(day, 1));
@@ -726,6 +730,7 @@ function buildFree(banks, size, t, jh) {
    ============================================================ */
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; }; }
 function shuffle(a, seed) { const r = seed != null ? rng(seed) : Math.random; a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const secTxt = (ms) => (ms < 1000 ? Math.max(0.1, Math.round(ms / 100) / 10) : Math.round(ms / 1000)) + " 秒";   // 不到 1 秒顯示一位小數（別出現「0 秒」）
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const normSpell = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[’‘`]/g, "'")
   .replace(/\s+/g, " ").trim().replace(/[.,!?。，]+$/, "").trim();
@@ -799,7 +804,7 @@ function setHeader(title, sub, back) {
   $("title").textContent = title; $("sub").textContent = sub || "";
   $("back").hidden = !back; $("topbar").hidden = true;
 }
-$("back").onclick = () => { session = null; home(); };
+$("back").onclick = () => { endSession(); home(); };
 function toast(msg) {
   const d = document.createElement("div"); d.className = "toast"; d.textContent = msg;
   document.body.appendChild(d); setTimeout(() => d.remove(), 1600);
@@ -868,9 +873,16 @@ function nextCard() {
   ({ input: renderInput, recog: renderRecog, recall: renderRecall, boost: renderBoost, jrec: renderJrec })[pk.e.k](pk);
   window.scrollTo(0, 0);   // 上一張背面很長、捲到下面按「下一張」時，新卡要回到頂端
 }
+// 作答結束（做完或按返回）：先把雲端較新的部分補回來（作答中合併時整天留了這台的），再畫首頁／排國中字
+function endSession() {
+  session = null;
+  if (!sync) return;
+  sync.settle();
+  if (clock.t == null) sync.pull();   // selftest（假時鐘）不連背景同步
+}
 function sessionDone() {
   const kind = session.kind;
-  session = null;
+  endSession();
   if (kind === "daily" || kind === "jh") return home();
   setHeader("完成", "", true);
   main.innerHTML = `<div class="card center"><div class="big" style="font-size:20px">這組練完了</div>
@@ -954,7 +966,7 @@ function renderRecall(pk) {
     const ok = !giveUp && spellOk(it, inp.value);
     const ms = performance.now() - t0;
     const g = answerRecall(session.Q, pk, ok, ms, now());
-    const label = g === 1 ? "重來" : `${g === 2 ? "困難" : "良好"}・${Math.round(ms / 1000)} 秒`;
+    const label = g === 1 ? "重來" : `${g === 2 ? "困難" : "良好"}・${secTxt(ms)}`;
     main.innerHTML = `<div class="q">
       <div><span class="grade g${g}">${label}</span>${!ok && !giveUp ? `　<span class="small mut">你拼：${esc(inp.value)}</span>` : ""}</div>
       ${backHtml(it, 2)}
@@ -1003,7 +1015,7 @@ function renderJrec(pk) {
     const ms = performance.now() - t0, ok = opts[+btn.dataset.i] === it.zh, Q = session.Q;
     const g = answerRecall(Q, pk, ok, ms, now());
     main.querySelectorAll(".opt").forEach((b) => { b.disabled = true; if (opts[+b.dataset.i] === it.zh) b.classList.add("correct"); });
-    const label = `${GRADE_TXT[g]}${g === 1 ? "" : `・${Math.round(ms / 1000)} 秒`}`;
+    const label = `${GRADE_TXT[g]}${g === 1 ? "" : `・${secTxt(ms)}`}`;
     if (ok) {   // 選對：亮綠＋評分約 0.8 秒，自動下一張
       $("fb").innerHTML = `<div class="center mt"><span class="grade g${g}">${label}</span></div>`;
       setTimeout(() => { if (session && session.Q === Q && main.querySelector(".q") && main.querySelector(".q").dataset.id === e.id) nextCard(); }, 800);
@@ -1244,16 +1256,17 @@ function dashHtml(st, t) {
   h += `</div>`;
   // 近 14 天
   const cells = [];
-  let nPass = 0, nMin = 0;
+  let nPass = 0, nMin = 0, nJm = 0;
   for (let i = 13; i >= 0; i--) {
     const d = addDays(day, -i), D = st.days[d];
     const cls = D && D.passed ? "ok" : D && D.ans ? "part" : "";
     if (D && D.passed) nPass++;
-    nMin += D ? mins(D.ms) : 0;
-    cells.push(`<div class="${cls}${i === 0 ? " td" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<b>${D && D.passed ? "過" : D && D.ans ? "未完" : "—"}</b>${D && D.ans ? mins(D.ms) + "分" : ""}</div>`);
+    const jm = D && D.jh && D.jh.ans ? Math.max(1, mins(D.jh.ms)) : 0;
+    nMin += D ? mins(D.ms) : 0; nJm += jm;
+    cells.push(`<div class="${cls}${i === 0 ? " td" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<b>${D && D.passed ? "過" : D && D.ans ? "未完" : "—"}</b>${D && D.ans ? mins(D.ms) + "分" : ""}${jm ? `<span class="jm">國${jm}分</span>` : ""}</div>`);
   }
   h += `<div class="card"><div class="lbl">近 14 天</div><div class="cal">${cells.join("")}</div>
-    <div class="small mut mt">過關 ${nPass} 天・共約 ${nMin} 分鐘（綠＝過關、黃＝有做沒做完）</div></div>`;
+    <div class="small mut mt">過關 ${nPass} 天・統測共約 ${nMin} 分鐘${nJm ? `・國中字另約 ${nJm} 分鐘（藍字）` : ""}（綠＝統測過關、黃＝有做沒做完）</div></div>`;
   // 本批
   const b = curBatch(day) || SCHEDULE.find((x) => x.date > day);
   h += `<div class="card"><div class="lbl">本批準備度</div>`;
@@ -1292,7 +1305,7 @@ function dashHtml(st, t) {
     const fcn = forgotCounts(st.log, t), rs = JH_LIST.map((i) => Rof(i.id)).filter((r) => r != null);
     const avg = rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null, Jt = Dt && Dt.jh;
     const nWeak = JH_LIST.filter((i) => isWeak(st.cards[i.id], Rof(i.id))).length, nOften = JH_LIST.filter((i) => fcn[i.id] >= FORGOT_MIN).length;
-    const td = !Jt ? (Dt && isClassDay(Dt, day) ? "今天上課日，國中字休息" : "今天還沒排國中字") : !Jt.set.length ? "今天沒有國中字要複習"
+    const td = !Jt ? (Dt && isClassDay(Dt, day, st) ? "今天上課日，國中字休息" : "今天還沒排國中字") : !Jt.set.length ? "今天沒有國中字要複習"
       : Jt.passed ? `今天國中字完成（${Jt.set.length} 題・約 ${mins(Jt.ms)} 分鐘）` : Jt.ans ? `今天國中字還沒做完（${passedCount(Jt)}/${Jt.set.length}・約 ${mins(Jt.ms)} 分鐘）` : "今天國中字還沒開始";
     h += `<div class="card"><div class="lbl">國中基本字・點一列看每個字</div><table class="t"><tr><th>範圍</th><th class="n">已檢測</th><th>平均記憶率</th><th class="n">弱字</th><th class="n">常忘</th><th></th></tr>
       <tr class="tap" data-unit="jh"><td>國中 1200</td><td class="n">${rs.length}/${JH_LIST.length}</td><td>${pct(avg)}<div class="bar"><div style="width:${Math.round((avg || 0) * 100)}%"></div></div></td>
@@ -1328,7 +1341,7 @@ const pad2 = (n) => String(n).padStart(2, "0");
 const mmdd = (d) => d.slice(5, 7) + "/" + d.slice(8, 10);
 const tpeTime = (t) => { const s = new Date(t + 8 * HOUR).toISOString(); return mmdd(s) + " " + s.slice(11, 16); };
 function chipHtml(e) {
-  const g = GRADE_TXT[e.g] ? e.g : 0, sec = fin(e.ms) ? Math.round(e.ms / 1000) + " 秒" : "";
+  const g = GRADE_TXT[e.g] ? e.g : 0, sec = fin(e.ms) ? secTxt(e.ms) : "";
   return `<span class="grade g${g}">${g ? GRADE_TXT[g] : "?"}${sec ? " " + sec : ""}</span>`;
 }
 function unitHtml(st, t, bk) {
@@ -1802,6 +1815,24 @@ async function jhSelftest(check, T) {
   J = todayJh(t); playAll(J, t, () => 0.8, rr, fast);
   const dh = dashHtml(S, t + HOUR), jx = jhHtml(S, t + HOUR), box = document.createElement("div");
   box.innerHTML = jx; bindUnit(box);
+  {
+    // 老師端是另一份進度（st），全域 S 是空的：上課日判斷要看學生的 st.intro
+    const cb2 = SCHEDULE.find((b) => BANK_ITEMS[b.bank]), tc = T(cb2.date);
+    S = freshState(); clock.t = tc;
+    const Dc2 = today(tc);
+    let tt = playAll(Dc2, tc, all, rr, fast);
+    const stu = JSON.parse(JSON.stringify(S));
+    S = freshState();
+    const dc = dashHtml(cleanState(stu), tt);
+    check("老師端國中字：上課日看學生自己的進度判斷（顯示「上課日，國中字休息」，不是「還沒排」）", /今天上課日，國中字休息/.test(dc) && !/今天還沒排國中字/.test(dc));
+    clock.t = t;
+  }
+  S = freshState(); t = T(DAYX); clock.t = t;
+  J = todayJh(t); playAll(J, t, () => 0.8, rr, fast);
+  const dh2 = dashHtml(S, t + HOUR);
+  check("老師端：近 14 天顯示國中字分鐘；不到 1 秒顯示一位小數（不是「0 秒」）",
+    /<span class="jm">國\d+分<\/span>/.test(dh2) && /國中字另約 \d+ 分鐘/.test(dh2) && secTxt(400) === "0.4 秒" && secTxt(20) === "0.1 秒" && secTxt(1400) === "1 秒" &&
+    chipHtml({ g: 4, ms: 300 }).includes("秒答 0.3 秒") && !/ 0 秒/.test(chipHtml({ g: 3, ms: 200 })));
   check("老師端國中字：儀表板卡片＋明細算得出來、依字母分組、沒有 undefined / NaN",
     /data-unit="jh"/.test(dh) && /國中字完成/.test(dh) && box.querySelectorAll(".wd").length >= JH_LIST.length && !/undefined|NaN/.test(dh + jx),
     `${box.querySelectorAll(".card").length} 張卡片`);
@@ -2222,6 +2253,40 @@ async function syncSelftest(check, T) {
     same(jA.S, s4()) && same(jB.S, s4()), `雲端：統測作答 ${s4().days[J3].ans}、國中字作答 ${s4().days[J3].jh && s4().days[J3].jh.ans}`);
   const jhCards = Object.keys(s4().cards).filter(isJh).length;
   check("同步／國中字：jh: 開頭的卡上得了雲端、沒有待上傳", jhCards > 0 && !Object.keys(diffState(jA.S, jA.sync.snapshot())).length, `雲端國中字卡 ${jhCards} 張`);
+  // (4) 真實流程（App 本身的 S、keepDay＝作答中、sessionDone）：A 統測作答中，B 做完國中字並上傳；A 作答中自動上傳時被擋→合併（整天留 A 的）；
+  //     A 做完統測回首頁 → 不能排出一份新的國中字清單（B 已經做過了），測試端不手動下載
+  {
+    const TK5 = "55555555555555555555555555555555", JD = "2026-11-25";
+    srv.add(TK5, "作答中合併");
+    const keepS = S, keepSync = sync;
+    let gMeta = null;
+    S = freshState();
+    const gSync = makeSync({
+      rpc: async (n, a) => srv.call(n, JSON.parse(JSON.stringify(a))), getS: () => S, setS: (x) => { S = x; }, saveLocal: () => {},
+      metaLoad: () => gMeta, metaSave: (x) => { gMeta = JSON.parse(JSON.stringify(x)); }, status: () => {},
+      keepDay: () => session ? dayOf(now()) : null, todayKey: () => dayOf(now()), ask: async () => true, onMerged: () => {},
+    });
+    gSync.setToken(TK5); await gSync.pull();
+    const jC = mkDev(); jC.sync.setToken(TK5); await jC.sync.pull();
+    let t = T(JD, "19:00"); clock.t = t;
+    const D = today(t);
+    session = { Q: D, kind: "daily", n: 0 };
+    for (let k = 0; k < 5; k++) { answerRecall(D, pick(D, t), true, 6000, t); t += 10000; }
+    const aS = S;
+    playJh(jC, JD, 12, "19:05"); await jC.sync.push();
+    S = aS; clock.t = t;
+    await gSync.push();                                      // 作答中自動上傳：被擋 → 合併（整天留 A 的）→ 重送
+    const kept = S.days[JD] === D && !D.jh;
+    const bJh = jC.S.days[JD].jh.ans;
+    sync = gSync;
+    while (session && D.queue.length) { const p = pick(D, t); if (p.e.k === "recall") answerRecall(D, p, true, 6000, t); else finishOther(D, p, t); t += 10000; clock.t = t; }
+    sessionDone();                                           // 做完 → 回首頁（首頁會排／顯示今天的國中字）
+    const J = S.days[JD].jh;
+    check("同步／國中字：作答中合併留了這台那天 → 作答結束回首頁時補回另一台的國中字進度（不重排一份、不重複複習）",
+      kept && J && J.ans === bJh && J.passed === jC.S.days[JD].jh.passed && S.days[JD].passed && S.days[JD].ans >= 5 && /國中基本字/.test(main.textContent),
+      `另一台國中字作答 ${bJh}；這台結束後國中字作答 ${J ? J.ans : "—"}`);
+    sync = keepSync; S = keepS; session = null;
+  }
   clock.t = null;
 }
 
