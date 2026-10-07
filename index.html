@@ -737,6 +737,7 @@ function nextCard() {
   if (session.kind === "free") setHeader("練習", `還剩 ${Q.queue.filter((e) => e.k === "recall").length} 張（不影響今天過關）`, true);
   else setHeader("今日任務", `${Q.set.length} 張・已過 ${passedCount(Q)}・還要約 ${Math.ceil(remainSec(Q) / 60)} 分鐘`, true);
   ({ input: renderInput, recog: renderRecog, recall: renderRecall, boost: renderBoost })[pk.e.k](pk);
+  window.scrollTo(0, 0);   // 上一張背面很長、捲到下面按「下一張」時，新卡要回到頂端
 }
 function sessionDone() {
   const kind = session.kind;
@@ -815,7 +816,7 @@ function renderRecall(pk) {
     <div class="row2 mt"><button class="btn ghost" id="skip">不會（看答案）</button><button class="btn" id="go">確定</button></div>
     <div id="fb"></div></div>`;
   const inp = $("inp");
-  inp.focus();   // 要在點擊的同一個事件裡 focus，iOS 才會叫出鍵盤
+  inp.focus({ preventScroll: true });   // 要在點擊的同一個事件裡 focus，iOS 才會叫出鍵盤；不讓它把畫面捲到標題列底下
   let done = false;
   const submit = (giveUp) => {
     if (done) return;
