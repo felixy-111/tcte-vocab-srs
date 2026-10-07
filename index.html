@@ -108,6 +108,14 @@
   .bar{height:8px; background:#E3EAF3; border-radius:4px; overflow:hidden; margin-top:3px;}
   .bar>div{height:100%; background:var(--blue);}
   .lnk{width:100%; font-size:13px; padding:10px; border:2px solid #D5E0EE; border-radius:10px; font-family:Menlo,monospace; color:var(--navy);}
+  tr.tap{cursor:pointer;} tr.tap:active{background:var(--bg);} .go{color:var(--blue); font-weight:700;}
+  .wd{padding:10px 2px; border-bottom:1px solid #EEF2F7; cursor:pointer; overflow-wrap:anywhere;}
+  .wd .top{display:flex; align-items:baseline; gap:8px;} .wd .top .r{margin-left:auto; font-weight:800; white-space:nowrap;}
+  .rg{color:var(--green);} .ra{color:#9A6B00;} .rr{color:var(--red);} .rn{color:#9fb2c8; font-weight:600;}
+  .chips{display:flex; flex-wrap:wrap; gap:4px; margin-top:5px;}
+  .chips .grade{font-size:11px; padding:2px 6px; border-radius:6px;} .grade.g0{background:#F1F4F8; color:var(--mut);}
+  .wh{margin-top:8px; padding:8px 10px; background:var(--bg); border-radius:10px; font-size:13px; cursor:default;}
+  .wh div{padding:2px 0;}
   .warn{background:#FCE8E8; color:var(--red); border-radius:10px; padding:10px 12px; font-size:13px; margin-top:8px;}
 </style>
 </head>
@@ -1034,11 +1042,25 @@ async function teacherStudent(id, name, flash) {
   let row;
   try { row = await tq(tsb.from("srs_state").select("state,updated_at").eq("student_id", id).maybeSingle()); }
   catch (e) { main.innerHTML = `<div class="card">讀取失敗：${esc(e.message || e)}</div>`; return; }
-  const st = cleanState(row && row.state);
-  setHeader(name, "最後同步 " + fmtTime(row && row.updated_at), true);
+  const st = cleanState(row && row.state), sub = "最後同步 " + fmtTime(row && row.updated_at);
+  setHeader(name, sub, true);
+  $("back").onclick = () => teacherHome();
   main.innerHTML = (flash || "") + dashHtml(st, now()) +
     `<div class="row2"><button class="btn ghost" id="rf">重新整理</button><button class="btn ghost" id="rl">重新產生連結</button></div>`;
   bindCopy();
+  main.querySelectorAll("tr[data-unit]").forEach((tr) => tr.onclick = () => {
+    // 單元明細：把儀表板整個收起來（不重抓雲端），返回時原樣放回、捲回原位
+    const saved = [...main.childNodes], bk = tr.dataset.unit, y = window.scrollY;
+    if (!BANK_ITEMS[bk]) return;
+    const back = () => { main.replaceChildren(...saved); setHeader(name, sub, true); $("back").onclick = () => teacherHome(); window.scrollTo(0, y); };
+    setHeader(name, bankName(bk) + " 每個字的記憶狀況", true);
+    $("back").onclick = back;
+    main.innerHTML = `<button class="btn ghost" id="ub">← 回儀表板</button><div class="mt"></div>` + unitHtml(st, now(), bk) +
+      `<button class="btn ghost" id="ub2">← 回儀表板</button>`;
+    bindUnit(main);
+    $("ub").onclick = $("ub2").onclick = back;
+    window.scrollTo(0, 0);
+  });
   $("rf").onclick = () => teacherStudent(id, name);
   $("rl").onclick = async () => {
     if (!confirm(`重新產生「${name}」的連結？\n舊連結會立刻失效，學生要用新連結重新打開一次（進度不會不見）。`)) return;
@@ -1102,10 +1124,13 @@ function dashHtml(st, t) {
   // 各單元記憶率
   const rows = DATA.banks.map((bk) => {
     const its = BANK_ITEMS[bk] || [], rs = its.map((i) => Rof(i.id)).filter((r) => r != null);
-    return { bk, n: its.length, seen: rs.length, avg: rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null };
+    const weak = its.filter((i) => isWeak(st.cards[i.id], Rof(i.id))).length;
+    return { bk, n: its.length, seen: rs.length, weak, avg: rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null };
   }).filter((r) => r.seen);
-  h += `<div class="card"><div class="lbl">各單元目前記憶率（FSRS 估計）</div>${rows.length ? `<table class="t"><tr><th>單元</th><th class="n">練過</th><th>平均記憶率</th></tr>
-    ${rows.map((r) => `<tr><td>${esc(bankName(r.bk))}</td><td class="n">${r.seen}/${r.n}</td><td>${pct(r.avg)}<div class="bar"><div style="width:${Math.round(r.avg * 100)}%"></div></div></td></tr>`).join("")}</table>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
+  h += `<div class="card"><div class="lbl">各單元目前記憶率（FSRS 估計）・點一列看每個字</div>${rows.length ? `<table class="t"><tr><th>單元</th><th class="n">練過</th><th>平均記憶率</th><th class="n">弱字</th><th></th></tr>
+    ${rows.map((r) => `<tr class="tap" data-unit="${esc(r.bk)}"><td>${esc(bankName(r.bk))}</td><td class="n">${r.seen}/${r.n}</td><td>${pct(r.avg)}<div class="bar"><div style="width:${Math.round(r.avg * 100)}%"></div></div></td>
+      <td class="n${r.weak ? " rr" : ""}">${r.weak}</td><td class="n go">›</td></tr>`).join("")}</table>
+    <div class="small mut mt">弱字＝記憶率 &lt; 70% 或忘記 ≥ 2 次</div>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
   // 積欠
   const tmr = dayStart(addDays(day, 1));
   const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
@@ -1113,6 +1138,57 @@ function dashHtml(st, t) {
   const unchecked = fcBanks.reduce((n, bk) => n + (BANK_ITEMS[bk] || []).filter((i) => !st.cards[i.id]).length, 0);
   h += `<div class="card"><div class="lbl">積欠</div><div class="stat"><div><b>${overdue}</b>到期但今天排不下</div><div><b>${unchecked}</b>舊字還沒首次檢測</div></div></div>`;
   return h;
+}
+
+// 單元明細（純函式；selftest 會測）：該半回每個字的記憶率、下次複習、作答紀錄，最弱的排最前面、沒練過的排最後
+const isWeak = (c, r) => !!c && (r < 0.7 || (+c.lapses || 0) >= 2);
+const GRADE_TXT = { 1: "重來", 2: "困難", 3: "良好" };
+const pad2 = (n) => String(n).padStart(2, "0");
+const mmdd = (d) => d.slice(5, 7) + "/" + d.slice(8, 10);
+const tpeTime = (t) => { const s = new Date(t + 8 * HOUR).toISOString(); return mmdd(s) + " " + s.slice(11, 16); };
+function chipHtml(e) {
+  const g = GRADE_TXT[e.g] ? e.g : 0, sec = fin(e.ms) ? Math.round(e.ms / 1000) + " 秒" : "";
+  return `<span class="grade g${g}">${g ? GRADE_TXT[g] : "?"}${sec ? " " + sec : ""}</span>`;
+}
+function unitHtml(st, t, bk) {
+  const day = dayOf(t), its = BANK_ITEMS[bk] || [];
+  const logs = {};
+  st.log.forEach((e) => { if (fin(e.t) && ITEMS[e.id]) (logs[e.id] = logs[e.id] || []).push(e); });
+  const rows = its.map((it) => {
+    const c = st.cards[it.id];
+    return { it, c, r: c ? fsrs.R(Math.max(0, (t - c.last) / DAY), Math.max(0.1, c.st)) : null, log: (logs[it.id] || []).slice().sort((a, b) => a.t - b.t) };
+  }).sort((a, b) => (a.r == null) - (b.r == null) || (a.r - b.r) || ((b.c ? +b.c.lapses || 0 : 0) - (a.c ? +a.c.lapses || 0 : 0)));
+  const seenRows = rows.filter((x) => x.c);
+  const avg = seenRows.length ? seenRows.reduce((s, x) => s + x.r, 0) / seenRows.length : null;
+  const nWeak = rows.filter((x) => isWeak(x.c, x.r)).length;
+  let h = `<div class="card"><div class="big">${esc(bankName(bk))}</div>
+    <div class="small mut">平均記憶率 ${avg == null ? "—" : Math.round(avg * 100) + "%"}・練過 ${seenRows.length}/${its.length}・弱字 ${nWeak}</div>
+    <div class="small mut">點一個字看完整作答紀錄。綠 ≥ 90%、黃 70–90%、紅 &lt; 70%</div></div><div class="card">`;
+  rows.forEach((x, i) => {
+    const { it, c, r } = x;
+    let rTxt = "未練", rCls = "rn", due = "", hist;
+    if (c) {
+      rTxt = Math.round(r * 100) + "%"; rCls = r >= 0.9 ? "rg" : r >= 0.7 ? "ra" : "rr";
+      const dd = dayOf(c.due), late = daysBetween(dd, day);
+      due = late > 0 ? `<span class="rr">已到期 ${late} 天</span>` : late === 0 ? "今天" : mmdd(dd);
+      const left = (c.last + Math.max(0.1, c.st) * DAY - t) / DAY;
+      const stab = left >= 1 ? `約 ${Math.round(left)} 天後記憶率掉到 90%` : left > 0 ? "不到 1 天後記憶率掉到 90%" : `記憶率已經低於 90%（約 ${Math.max(1, Math.round(-left))} 天前掉到 90%）`;
+      hist = `<div><b>${stab}</b></div>`;
+    } else hist = `<div><b>還沒練過這個字</b></div>`;
+    hist += x.log.length ? x.log.slice().reverse().map((e) => `<div>${esc(tpeTime(e.t))}　${chipHtml(e)}${e.m === "f" ? ' <span class="small mut">自由練習</span>' : ""}</div>`).join("")
+      : `<div class="mut">沒有作答紀錄</div>`;
+    h += `<div class="wd" data-w="${i}"><div class="top"><b>${esc(it.en)}</b><span class="small mut">${esc(it.zh)}</span><span class="r ${rCls}">${rTxt}</span></div>
+      ${c ? `<div class="small mut">下次複習 ${due}・練過 ${+c.reps || 0} 次・忘記 ${+c.lapses || 0} 次</div>` : ""}
+      ${x.log.length ? `<div class="chips">${x.log.slice(-5).map(chipHtml).join("")}</div>` : ""}
+      <div class="wh" hidden>${hist}</div></div>`;
+  });
+  return h + `</div>`;
+}
+function bindUnit(root) {
+  root.querySelectorAll(".wd").forEach((w) => w.onclick = (ev) => {
+    if (ev.target.closest(".wh")) return;   // 點展開的紀錄本身不收起來（方便滑動閱讀）
+    const p = w.querySelector(".wh"); p.hidden = !p.hidden;
+  });
 }
 
 /* ============================================================
@@ -1308,6 +1384,7 @@ async function runSelftest() {
     gapBad.length ? gapBad.slice(0, 5).join("; ") : `提早出 ${earlyAlone} 次（都是其他卡也還在等）`);
   check("(e) 長期排程每字每天只評一次", !multiGrade);
   await syncSelftest(check, T);
+  drillSelftest(check, T);
   out.push("\n逐日明細（張數／估計分／模擬分／作答次／首檢／加強卡／留到明天）：\n" +
     perDay.map((x) => `${x.day} ${x.set}張 估${x.est}分 實${x.min}分 答${x.ans} 首檢${x.fc} 加強${x.boosts} 留${x.backlog}${x.forced ? " ＊本批佔滿" : ""}`).join("\n"));
   const pass = results.every(Boolean);
@@ -1316,6 +1393,61 @@ async function runSelftest() {
   main.innerHTML = `<pre id="selftest" data-pass="${pass}">${esc(out.join("\n"))}</pre>`;
   console.log(out.join("\n"));
   S = freshState();
+}
+
+/* ---------- 老師端單元明細 selftest（假進度；截圖也用這份） ---------- */
+function drillFixture(t) {
+  const st = freshState(), its = BANK_ITEMS.u1_upper;
+  const card = (i, st_, ago, reps, lapses, dueDay) => { st.cards[its[i].id] = { st: st_, df: 5, reps, lapses, last: t - ago * DAY, due: dayStart(dueDay) }; };
+  const day = dayOf(t);
+  card(0, 30, 1, 5, 0, addDays(day, 20));    // 綠
+  card(1, 5, 10, 4, 1, addDays(day, 3));     // 黃
+  card(2, 1, 10, 7, 3, addDays(day, -4));    // 紅、已到期 4 天
+  card(3, 40, 2, 6, 2, day);                 // 綠但忘記 2 次（弱字）、今天到期
+  card(4, 3, 4, 2, 0, addDays(day, 1));      // 黃
+  const gs = [1, 3, 2, 1, 1, 3, 2];
+  gs.forEach((g, k) => st.log.push({ t: t - (10 - k) * DAY - 60 * MIN, id: its[2].id, g, ms: 8000 + k * 3000, m: k === 5 ? "f" : "d" }));
+  st.log.push({ t: t - 1 * DAY, id: its[0].id, g: 3, ms: 6200, m: "d" });
+  st.log.sort((a, b) => a.t - b.t);
+  return { st, its };
+}
+function drillSelftest(check, T) {
+  const t = T("2026-10-20", "21:00"), { st, its } = drillFixture(t);
+  const box = document.createElement("div");
+  box.innerHTML = unitHtml(st, t, "u1_upper");
+  bindUnit(box);
+  const wds = [...box.querySelectorAll(".wd")], en = (w) => w.querySelector(".top b").textContent;
+  const order = wds.map(en), rOf = (i) => box.querySelector(`.wd[data-w="${order.indexOf(its[i].en)}"]`);
+  check("單元明細：18 個字都列出、最弱的排最前面、沒練過的排最後",
+    wds.length === its.length && order[0] === its[2].en && order[1] === its[1].en && order[2] === its[4].en &&
+    wds.slice(5).every((w) => w.querySelector(".r").textContent === "未練"), order.slice(0, 6).join(", "));
+  const cls = (i) => rOf(i).querySelector(".r").className;
+  check("單元明細：記憶率顏色（≥90 綠、70–90 黃、<70 紅、未練灰）",
+    /rg/.test(cls(0)) && /ra/.test(cls(1)) && /rr/.test(cls(2)) && /rn/.test(rOf(5).querySelector(".r").className));
+  check("單元明細：下次複習（已到期 N 天／今天／MM/DD）、練過／忘記次數",
+    /已到期 4 天/.test(rOf(2).textContent) && /下次複習 今天/.test(rOf(3).textContent) && rOf(0).textContent.includes("下次複習 " + mmdd(addDays("2026-10-20", 20))) &&
+    /練過 7 次・忘記 3 次/.test(rOf(2).textContent));
+  const chips = [...rOf(2).querySelectorAll(".chips .grade")].map((c) => c.textContent);
+  check("單元明細：最近 5 次作答小標籤（舊→新）", chips.length === 5 && chips[0] === "困難 14 秒" && chips[4] === "困難 26 秒", chips.join(" / "));
+  const wh = rOf(2).querySelector(".wh"), hidden0 = wh.hidden;
+  rOf(2).click();
+  check("點字展開：完整作答紀錄（台北時間、新→舊）＋記憶率掉到 90% 的時間",
+    hidden0 && !wh.hidden && wh.querySelectorAll(".grade").length === 7 && wh.querySelectorAll("div")[1].textContent.includes(tpeTime(st.log.filter((e) => e.id === its[2].id).pop().t)) &&
+    /已經低於 90%/.test(wh.textContent) && /自由練習/.test(wh.textContent) && /約 29 天後記憶率掉到 90%/.test(rOf(0).querySelector(".wh").textContent),
+    wh.textContent.slice(0, 60));
+  rOf(2).click();
+  check("再點一次收起來", wh.hidden);
+  const d = dashHtml(st, t);
+  check("儀表板單元列：可點、顯示弱字數、沒有 undefined / NaN",
+    /data-unit="u1_upper"/.test(d) && /<td class="n rr">2<\/td>/.test(d) && !/undefined|NaN/.test(d + box.innerHTML));
+  // 怪字串：題庫字被改成 HTML、作答紀錄的欄位亂填、不在題庫的字
+  const it5 = ITEMS[its[5].id], keep = [it5.en, it5.zh];
+  it5.en = '<img src=x onerror=alert(1)>'; it5.zh = "<script>alert(1)<\/script>";
+  st.log.push({ t: t - DAY, id: its[2].id, g: "<b>x</b>", ms: "<i>y</i>", m: "<u>" }, { t: t - DAY, id: "<svg onload=alert(1)>", g: 1, ms: 1 });
+  st.cards["<svg onload=alert(1)>"] = { st: 1, df: 5, reps: 1, lapses: 9, last: t - DAY, due: t };
+  const evil = unitHtml(st, t, "u1_upper") + dashHtml(st, t);
+  it5.en = keep[0]; it5.zh = keep[1];
+  check("單元明細：怪字串不會變成 HTML", !/<img src=x|<script>|<svg|<b>x|<i>y|<u>/i.test(evil) && evil.includes("&lt;img src=x"));
 }
 
 /* ---------- 雲端同步 selftest：假伺服器（照 supabase/001_srs.sql 的 srs_load / srs_save 規則），完全不連網 ---------- */

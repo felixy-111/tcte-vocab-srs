@@ -1,6 +1,6 @@
 // 快取優先：先用快取，沒有才上網抓並存起來（離線可用）。
 // ⚠️ 改了 index.html、data/、audio/、img/ 任何東西都要把 CACHE 版本號 +1，否則手機會一直用舊版。
-const CACHE = "tsvt-srs-v6";
+const CACHE = "tsvt-srs-v7";
 const CORE = ["./", "./index.html", "./manifest.json", "./data/cards.json", "./icon-192.png", "./icon-512.png", "./vendor/supabase.js"];
 
 self.addEventListener("install", (e) => {
