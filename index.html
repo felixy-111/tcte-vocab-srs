@@ -462,7 +462,8 @@ const seen = (id) => !!S.cards[id];
    ============================================================ */
 function firstCheckPool(day, exclude) {
   const cur = curBatch(day);
-  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.testDate <= day).map((b) => b.bank));
+  // 最近教的先檢測（太一 2026-10-07）：剛學的記憶最淺；U1–U7 課堂 Anki 也在複習
+  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.testDate <= day).map((b) => b.bank)).reverse();
   const list = [];
   banks.forEach((b) => (BANK_ITEMS[b] || []).forEach((it) => {
     if (!seen(it.id) && !exclude.has(it.id) && (!cur || cur.bank !== b)) list.push(it);
@@ -620,7 +621,7 @@ function buildFree(banks, size, t) {
     !(D.mock && ITEMS[id].bank === D.mock) && !(sched.has(ITEMS[id].bank) && !S.intro[id]);
   const ids = [];
   const add = (id, tag) => { if (ids.length < size && !ids.some((x) => x.id === id)) ids.push({ id, tag }); };
-  DATA.items.filter((i) => inRange(i.id) && !seen(i.id)).sort((a, b) => (b.wrong ? 1 : 0) - (a.wrong ? 1 : 0))
+  DATA.items.slice().reverse().filter((i) => inRange(i.id) && !seen(i.id)).sort((a, b) => (b.wrong ? 1 : 0) - (a.wrong ? 1 : 0))   // 同每日：錯題先、再從最近教的開始
     .forEach((i) => add(i.id, "fc"));
   Object.keys(S.cards).filter((id) => inRange(id) && S.cards[id].due <= t)
     .sort((a, b) => S.cards[a].due - S.cards[b].due).forEach((id) => add(id, "rev"));
@@ -1429,6 +1430,15 @@ function drillFixture(t) {
   return { st, its };
 }
 function drillSelftest(check, T) {
+  {
+    const keep = S; S = freshState();
+    const pool = firstCheckPool("2026-10-08", new Set()), firstPlain = pool.find((i) => !i.wrong);
+    const wrongN = pool.filter((i) => i.wrong).length;
+    check("舊字首次檢測順序：錯題清單先、其餘從最近教的開始（U8上 → U1上）",
+      pool.slice(0, wrongN).every((i) => i.wrong) && firstPlain && firstPlain.bank === "u8_upper" && pool[pool.length - 1].bank === "u1_upper",
+      `錯題 ${wrongN}、接著 ${firstPlain && firstPlain.bank}、最後 ${pool[pool.length - 1].bank}`);
+    S = keep;
+  }
   const t = T("2026-10-20", "21:00"), { st, its } = drillFixture(t);
   const box = document.createElement("div");
   box.innerHTML = unitHtml(st, t, "u1_upper");
