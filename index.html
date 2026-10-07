@@ -87,7 +87,7 @@
   .list a{display:flex; justify-content:space-between; padding:12px 4px; border-bottom:1px solid #EEF2F7; color:var(--navy); text-decoration:none; font-size:15px;}
   .list a.lock{color:#9fb2c8; pointer-events:none;}
   .grade{display:inline-block; font-size:14px; font-weight:700; border-radius:8px; padding:4px 10px;}
-  .grade.g3{background:#E5F6EC; color:var(--green);} .grade.g2{background:#FFF4D6; color:#9A6B00;} .grade.g1{background:#FCE8E8; color:var(--red);}
+  .grade.g3,.grade.g4{background:#E5F6EC; color:var(--green);} .grade.g2{background:#FFF4D6; color:#9A6B00;} .grade.g1{background:#FCE8E8; color:var(--red);}
   .formtag{display:table; font-size:11px; color:var(--blue); background:#fff; border:1px solid #C9D6E6; border-radius:6px; padding:1px 6px; margin-bottom:4px;}
   .copy{display:flex; flex-direction:column; gap:8px; margin-top:10px;}
   .copy .tinput{font-size:18px; padding:10px;}
@@ -148,7 +148,14 @@ const BUDGET_SEC = 1200;             // 每日份量（約 20 分鐘）；本批
 const FIRST_CHECK_PER_DAY = 20;      // 舊字首次檢測每天幾項
 const BACKLOG_PAUSE = 30;            // 積欠的到期複習超過幾張就暫停當天的舊字首檢
 const BOOST_EVERY = 4;               // 同一字今天錯滿 4 次 → 加強卡
-const COST = { input: 25, recog: 6, recall: 15, boost: 40 };   // 估計秒數
+// 估計秒數（jrec＝國中字認得卡：選對自動下一張，平均每答約 6.5 秒（模擬校準）；首檢答錯要走學習步驟再答 2 次，所以首檢 ×1.3、複習 ×1.1）
+const COST = { input: 25, recog: 6, recall: 15, boost: 40, jrec: 6.5 };
+// 國中基本字（第二條每日軌道；跟統測的過關分開算）
+const JH_GOOD_MS = 8000;             // 選中文比拼字快：8 秒內選對＝良好，超過＝困難
+const JH_FAST_MS = 4000;             // 4 秒內選對＝秒答（已經會）→ 直接 90 天後再看（太一 2026-10-08「秒答的字直接過」）
+const JH_MAX_IVL = 90;               // 國中字最大間隔（天）；國中字不吃考前總掃
+const JH_BUDGET_SEC = 300;           // 每日份量（約 5 分鐘）
+const JH_FIRST_CHECK_PER_DAY = 40;   // 沒見過的國中字每天最多檢測幾個（照官方字表順序）
 const MIN = 60e3, HOUR = 3600e3, DAY = 86400e3;
 // FSRS-5 預設參數
 const W = [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575, 0.1192, 1.01925,
@@ -192,6 +199,7 @@ function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^=
 // 間隔天數 → 到期時間（到期日凌晨 4 點），套上限 45 天＋考前總掃
 function scheduleDue(t, ivlDays, key) {
   const today = dayOf(t);
+  if (isJh(key)) return dayStart(addDays(today, Math.min(JH_MAX_IVL, Math.max(1, Math.round(ivlDays)))));   // 國中字：上限 90 天、不拉進考前總掃
   const n = Math.min(MAX_IVL, Math.max(1, Math.round(ivlDays)));
   let due = addDays(today, n);
   if (today < SWEEP_START && due >= addDays(EXAM_DATE, -7)) {
@@ -204,8 +212,8 @@ function scheduleDue(t, ivlDays, key) {
   return dayStart(due);
 }
 
-// g：1=重來 2=困難 3=良好 4=簡單（只有舊字首次檢測用到）
-function review(id, g, t) {
+// g：1=重來 2=困難 3=良好 4=簡單（舊字首次檢測、國中字秒答用到）；ivl：指定間隔天數（國中字秒答＝90）
+function review(id, g, t, ivl) {
   let c = S.cards[id];
   if (!c) {
     c = S.cards[id] = { st: fsrs.initS(g), df: fsrs.initD(g), reps: 0, lapses: 0, last: 0, due: 0 };
@@ -215,7 +223,7 @@ function review(id, g, t) {
     c.df = fsrs.nextD(c.df, g);
     if (g === 1) c.lapses++;
   }
-  c.due = scheduleDue(t, g === 1 ? 1 : fsrs.ivl(c.st), id);
+  c.due = scheduleDue(t, g === 1 ? 1 : ivl || fsrs.ivl(c.st), id);
   c.reps++; c.last = t;
   reviewCalls++;
   return c;
@@ -266,6 +274,10 @@ const okCard = (c) => isObj(c) && ["st", "df", "reps", "lapses", "last", "due"].
 const okDay = (d) => isObj(d) && Array.isArray(d.set) && d.set.every((x) => typeof x === "string") &&
   Array.isArray(d.queue) && d.queue.every((e) => isObj(e) && typeof e.id === "string") &&
   isObj(d.graded) && isObj(d.fails) && isObj(d.boosts) && isObj(d.mockFirst) && fin(d.ans) && fin(d.ms);
+// 國中基本字的當日清單（days[日期].jh）：形狀不對只丟掉 jh，統測那天照留
+const okJh = (j) => isObj(j) && Array.isArray(j.set) && j.set.every((x) => typeof x === "string") &&
+  Array.isArray(j.queue) && j.queue.every((e) => isObj(e) && typeof e.id === "string") &&
+  isObj(j.graded) && isObj(j.fails) && isObj(j.boosts) && fin(j.ans) && fin(j.ms);
 const okLog = (e) => isObj(e) && fin(e.t) && typeof e.id === "string";
 const logKey = (e) => e.t + "|" + e.id;
 function cleanState(x) {
@@ -273,7 +285,10 @@ function cleanState(x) {
   if (!isObj(x)) return s;
   if (isObj(x.cards)) for (const k of Object.keys(x.cards)) if (okKey(k) && okCard(x.cards[k])) s.cards[k] = x.cards[k];
   if (isObj(x.intro)) for (const k of Object.keys(x.intro)) if (okKey(k) && fin(x.intro[k])) s.intro[k] = x.intro[k];
-  if (isObj(x.days)) for (const k of Object.keys(x.days)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && okDay(x.days[k])) s.days[k] = x.days[k];
+  if (isObj(x.days)) for (const k of Object.keys(x.days)) if (/^\d{4}-\d{2}-\d{2}$/.test(k) && okDay(x.days[k])) {
+    const d = x.days[k];
+    if (d.jh !== undefined && !okJh(d.jh)) { s.days[k] = Object.assign({}, d); delete s.days[k].jh; } else s.days[k] = d;
+  }
   if (Array.isArray(x.log)) s.log = x.log.filter(okLog);
   return s;
 }
@@ -292,13 +307,20 @@ function moreDay(a, b) {   // 進度較多的那天贏；完全一樣 → 雲端
   for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] > rb[i] ? a : b;
   return b;
 }
+// 同一天：統測那份（moreDay）跟國中字那份（.jh）各自挑進度較多的再拼起來
+// → 一台做完統測、另一台做國中字，合併後兩邊的進度都在。兩份都來自同一邊時回傳原物件（不拷貝）
+function mergeDayParts(a, b) {
+  if (!a) return b; if (!b) return a;
+  const w = moreDay(a, b), j = moreDay(a.jh, b.jh);
+  return j === w.jh ? w : Object.assign({}, w, { jh: j });
+}
 function mergeState(L, R, keepDay) {
   const M = freshState();
   for (const id of new Set(Object.keys(L.cards).concat(Object.keys(R.cards)))) M.cards[id] = newerCard(L.cards[id], R.cards[id]);
   for (const src of [L.intro, R.intro]) for (const id of Object.keys(src)) M.intro[id] = M.intro[id] != null ? Math.min(M.intro[id], src[id]) : src[id];
   for (const d of new Set(Object.keys(L.days).concat(Object.keys(R.days)))) {
     const a = L.days[d], b = R.days[d];
-    const w = d === keepDay && a ? a : moreDay(a, b);
+    const w = d === keepDay && a ? a : mergeDayParts(a, b);   // 作答中（統測或國中字）→ 整天留這台，不換掉隊伍物件
     if (a && b && (a.closed || b.closed)) w.closed = true;
     M.days[d] = w;
   }
@@ -316,7 +338,7 @@ function diffState(st, snap) {
   for (const k of Object.keys(st.cards)) if (newerCard(snap.cards[k], st.cards[k]) !== snap.cards[k]) put("cards", k, st.cards[k]);
   for (const k of Object.keys(st.days)) {
     const a = st.days[k], b = snap.days[k];
-    let w = moreDay(a, b);                                     // 平手 → 雲端
+    let w = mergeDayParts(a, b);                               // 平手 → 雲端；統測／國中字各自比
     if (b && (a.closed || b.closed) && !w.closed) w = Object.assign({}, w, { closed: true });
     if (w !== b) put("days", k, w);
   }
@@ -356,7 +378,7 @@ function makeSync(o) {
     snap = JSON.parse(JSON.stringify(remote));   // 另存一份：merged 會共用 remote 的物件，之後作答會直接改到它們
     M.rev = rev; delete M.h; delete M.logT; delete M.pend;   // 舊版同步紀錄的欄位，用不到了
     M.pulled = true; putMeta();
-    return !!before && merged.days[kd] === before && !before.ans;   // 今天的清單是這台合併前自己排的、還沒動過
+    return !!before && merged.days[kd] === before && !before.ans && !(before.jh && before.jh.ans);   // 今天的清單是這台合併前自己排的、還沒動過
   }
 
   async function doPull() {
@@ -389,6 +411,10 @@ function makeSync(o) {
       M.sid = r.sid; M.name = r.name; prevMeta = null;
       const stale = adopt(cleanState(r.state), r.rev);
       o.onMerged(first, stale);
+    } else if (snap && !o.keepDay() && Object.keys(diffState(snap, o.getS())).length) {
+      // 雲端沒變，但之前作答中合併時這台整天留了自己的（keepDay）→ 現在沒在作答，把雲端較新的部分補回這台
+      // （例：統測作答中收到另一台的國中字進度；不補的話這台會以為今天國中字還沒排、重排一份）
+      o.onMerged(false, adopt(JSON.parse(JSON.stringify(snap)), M.rev));
     }
     return doPush(0);
   }
@@ -447,11 +473,20 @@ function makeSync(o) {
    資料
    ============================================================ */
 let DATA, ITEMS = {}, BANK_ITEMS = {}, SCHEDULE = [], LEARNED = [];
+// 國中基本字：id 一律 "jh:" 開頭，放在 JH（不放進 ITEMS → 統測的清單、儀表板、總複習範圍都碰不到它們）
+let JH = {}, JH_LIST = [];
+function indexJh(list) {
+  JH = {}; JH_LIST = (list || []).map((x) => Object.assign({ sentences: [], collocations: [], derivatives: [], emoji: "", img: "", syn: [] }, x));
+  JH_LIST.forEach((it) => { if (!it.accept) it.accept = [it.en.toLowerCase()]; JH[it.id] = it; });
+}
 function indexData(d) {
   DATA = d; ITEMS = {}; BANK_ITEMS = {};
   d.items.forEach((it) => { ITEMS[it.id] = it; (BANK_ITEMS[it.bank] = BANK_ITEMS[it.bank] || []).push(it); });
   SCHEDULE = d.schedule; LEARNED = d.learnedBanks;
+  indexJh(d.jh && d.jh.items);
 }
+const isJh = (id) => id.startsWith("jh:");
+const itemOf = (id) => ITEMS[id] || JH[id];
 const bankName = (b) => { const m = b.match(/u(\d+)_(upper|lower)/); return `U${m[1]}${m[2] === "upper" ? "上" : "下"}`; };
 const curBatch = (day) => SCHEDULE.find((b) => b.date <= day && day < b.testDate) || null;
 const mockBatch = (day) => SCHEDULE.find((b) => b.testDate === addDays(day, 1) && b.date <= day) || null;
@@ -470,7 +505,7 @@ function firstCheckPool(day, exclude) {
   }));
   return list.filter((i) => i.wrong).concat(list.filter((i) => !i.wrong));
 }
-const entryCost = (e) => COST[e.k] * (e.k === "recall" ? (e.steps ? 2.5 : e.tag === "fc" ? 1.7 : 1.3) : 1);
+const entryCost = (e) => COST[e.k] * (e.k === "recall" ? (e.steps ? 2.5 : e.tag === "fc" ? 1.7 : 1.3) : e.k === "jrec" ? (e.tag === "fc" ? 1.3 : 1.1) : 1);
 
 function buildDay(day) {
   // 前幾天沒過關的字：至少今天到期
@@ -506,7 +541,7 @@ function buildDay(day) {
   // 3. 舊字首次檢測（排在到期複習前：沒檢測過的舊字等於完全沒複習）
   //    但積欠的到期複習超過 BACKLOG_PAUSE 張時，今天暫停首檢、名額讓給複習（避免越積越多）
   const t0 = dayStart(day);
-  const dueIds = Object.keys(S.cards).filter((id) => !inSet.has(id) && S.cards[id].due < dayStart(addDays(day, 1)));
+  const dueIds = Object.keys(S.cards).filter((id) => !isJh(id) && !inSet.has(id) && S.cards[id].due < dayStart(addDays(day, 1)));
   const overdue = dueIds.filter((id) => S.cards[id].due < t0).length;
   D.fcPaused = overdue > BACKLOG_PAUSE;
   if (!D.fcPaused) for (const it of firstCheckPool(day, inSet)) {
@@ -522,6 +557,46 @@ function buildDay(day) {
   return D;
 }
 const today = (t) => S.days[dayOf(t)] || buildDay(dayOf(t));
+
+/* ============================================================
+   國中基本字：另一份每日清單（存在 days[日期].jh），約 5 分鐘，完成與否不影響統測過關
+   - 上課日（統測本批第一次輸入新字那天）不排
+   - 到期複習先（記憶率最低的先），再來沒見過的字（官方字表順序，每天 ≤ 40）
+   - 認得卡＝英→中四選一；最近 30 天有 2 天以上第一次就錯（＝常忘）→ 改考拼寫
+   ============================================================ */
+const isClassDay = (D, day) => D.queue.some((e) => e.k === "input") || D.set.some((id) => S.intro[id] && dayOf(S.intro[id]) === day);
+function buildJh(day, D, t, budget = JH_BUDGET_SEC) {   // budget：selftest 測首檢上限用
+  const J = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, passed: false, passedAt: 0, ms: 0, lastAct: 0, est: 0, fc: 0 };
+  const forgot = forgotCounts(S.log, t), t0 = dayStart(day), t1 = dayStart(addDays(day, 1));
+  const add = (id, tag) => {
+    const e = forgot[id] >= FORGOT_MIN ? { id, k: "recall", tag: "jhs", steps: null, step: 0, hard: 0, after: 0, t: 0 }
+      : { id, k: "jrec", tag, steps: null, step: 0, hard: 0, after: 0, t: 0 };
+    if (J.est + entryCost(e) > budget) return false;
+    J.set.push(id); J.queue.push(e); J.est += entryCost(e);
+    return true;
+  };
+  const free = (id) => D.graded[id] === undefined;   // 今天已在自由練習評過分的不再排（一天只評一次）
+  const Rof = (id) => fsrs.R(Math.max(0, (t0 - S.cards[id].last) / DAY), S.cards[id].st);
+  Object.keys(S.cards).filter((id) => JH[id] && S.cards[id].due < t1 && free(id))
+    .sort((a, c) => Rof(a) - Rof(c)).forEach((id) => add(id, "rev"));
+  for (const it of JH_LIST) {
+    if (J.fc >= JH_FIRST_CHECK_PER_DAY) break;
+    if (seen(it.id) || !free(it.id)) continue;
+    if (!add(it.id, "fc")) break;
+    J.fc++;
+  }
+  return J;
+}
+// 今天的國中字清單；沒有字表或上課日 → null
+function todayJh(t) {
+  if (!JH_LIST.length) return null;
+  const day = dayOf(t), D = today(t);
+  if (D.jh) return D.jh;
+  if (isClassDay(D, day)) return null;
+  D.jh = buildJh(day, D, t);
+  save();
+  return D.jh;
+}
 
 // 下一張：隊伍裡第一張「已隔夠張數（Q.real，加強卡不算）＋時間」的。
 // 都還沒到 → 提早出「等最久」的那張，但只要還有別張，就不讓剛出過的同一張馬上再出；只剩它才直接出。
@@ -541,22 +616,23 @@ function requeue(Q, e, mins, t) {
   Q.queue.splice(Math.min(Q.queue.length, MIN_GAP), 0, e);
 }
 const dayOfQ = (Q, t) => Q.set ? Q : (S.days[Q.day] || today(t));   // 作答算在開始作答的那天（跨過凌晨 4 點也一樣）
-const gradeOf = (ok, ms) => !ok ? 1 : ms > GOOD_MS ? 2 : 3;
+// fast：國中字認得卡才有（≤ 4 秒選對 → 4＝秒答）
+const gradeOf = (ok, ms, lim, fast) => !ok ? 1 : ms > (lim || GOOD_MS) ? 2 : fast && ms <= fast ? 4 : 3;
 
-// 拼寫作答。Q＝每日任務（D）或自由練習的隊伍
+// 拼寫作答（國中字認得卡 jrec 也走這裡，只差 8 秒門檻）。Q＝每日任務（D）、國中字清單（D.jh）或自由練習的隊伍
 function answerRecall(Q, pk, ok, ms, t) {
   const e = pk.e, id = e.id, D = dayOfQ(Q, t), daily = Q === D;
-  const g = gradeOf(ok, ms);
+  const g = e.k === "jrec" ? gradeOf(ok, ms, JH_GOOD_MS, JH_FAST_MS) : gradeOf(ok, ms);
   Q.queue.splice(pk.i, 1);
   Q.ans++; Q.real = (Q.real || 0) + 1; Q.lastId = id;
   let done = false;
   // 自由練習不碰今天清單／模擬考的字（那些只由每日任務評分）
-  const freeLocked = !daily && (D.set.includes(id) || (D.mock && ITEMS[id].bank === D.mock));
+  const freeLocked = !daily && (D.set.includes(id) || (D.jh && D.jh.set.includes(id)) || (D.mock && ITEMS[id] && ITEMS[id].bank === D.mock));
   if (freeLocked) done = !!ok;
   else if (D.graded[id] === undefined) {
     // 當天第一次作答 → 長期排程（FSRS）
     const fc = !S.cards[id] && !e.steps;
-    review(id, fc ? [0, 1, 3, 4][g] : g, t);
+    review(id, fc ? [0, 1, 3, 4, 4][g] : g, t, g === 4 ? JH_MAX_IVL : null);
     D.graded[id] = g;
     if (e.tag === "mock") D.mockFirst[id] = ok;
     if (fc && g > 1) done = true;                       // 舊字首檢拼得出來 → 直接長間隔
@@ -587,7 +663,7 @@ function answerRecall(Q, pk, ok, ms, t) {
   if (!daily) D.extra++;
   logAct(D, t);
   S.log.push({ t, id, g, ms: Math.round(ms), m: daily ? "d" : "f" });
-  if (S.log.length > 5000) S.log.splice(0, S.log.length - 5000);
+  if (S.log.length > LOG_CAP) S.log.splice(0, S.log.length - LOG_CAP);
   if (daily && !D.queue.length && !D.passed) { D.passed = true; D.passedAt = t; }
   save();
   return g;
@@ -614,21 +690,35 @@ const remainSec = (Q) => Q.queue.reduce((s, e) => s + entryCost(e), 0);
 const passedCount = (D) => D.set.filter((id) => !D.queue.some((e) => e.id === id)).length;
 
 /* ---------- 總複習 / 再多練一些（不影響今天過關） ---------- */
-function buildFree(banks, size, t) {
+// jh：也抽國中基本字（不含今天的國中字清單；常忘的考拼寫、其餘認得卡）
+function buildFree(banks, size, t, jh) {
   // 不含今天清單（本批／模擬考／今天要複習的）與還沒上過「新字輸入」的新進度字
-  const D = today(t), sched = new Set(SCHEDULE.map((b) => b.bank));
-  const inRange = (id) => banks.has(ITEMS[id].bank) && !D.set.includes(id) &&
+  const D = today(t), J = jh ? todayJh(t) : null, sched = new Set(SCHEDULE.map((b) => b.bank));
+  const inRange = (id) => !!ITEMS[id] && banks.has(ITEMS[id].bank) && !D.set.includes(id) &&
     !(D.mock && ITEMS[id].bank === D.mock) && !(sched.has(ITEMS[id].bank) && !S.intro[id]);
-  const ids = [];
-  const add = (id, tag) => { if (ids.length < size && !ids.some((x) => x.id === id)) ids.push({ id, tag }); };
-  DATA.items.slice().reverse().filter((i) => inRange(i.id) && !seen(i.id)).sort((a, b) => (b.wrong ? 1 : 0) - (a.wrong ? 1 : 0))   // 同每日：錯題先、再從最近教的開始
-    .forEach((i) => add(i.id, "fc"));
-  Object.keys(S.cards).filter((id) => inRange(id) && S.cards[id].due <= t)
-    .sort((a, b) => S.cards[a].due - S.cards[b].due).forEach((id) => add(id, "rev"));
-  Object.keys(S.cards).filter(inRange)
-    .sort((a, b) => fsrs.R((t - S.cards[a].last) / DAY, S.cards[a].st) - fsrs.R((t - S.cards[b].last) / DAY, S.cards[b].st))
-    .forEach((id) => add(id, "rev"));
-  return { queue: shuffle(ids).map((x) => ({ id: x.id, k: "recall", tag: x.tag, steps: null, step: 0, hard: 0, after: 0, t: 0 })), ans: 0, real: 0, fails: {}, day: dayOf(t) };
+  const byR = (a, b) => fsrs.R((t - S.cards[a].last) / DAY, S.cards[a].st) - fsrs.R((t - S.cards[b].last) / DAY, S.cards[b].st);
+  const pickIds = (unseen, inR) => {   // 同每日：沒檢測過的 → 到期的 → 記憶率最低的
+    const ids = [];
+    const add = (id, tag) => { if (ids.length < size && !ids.some((x) => x.id === id)) ids.push({ id, tag }); };
+    unseen.forEach((i) => add(i.id, "fc"));
+    Object.keys(S.cards).filter((id) => inR(id) && S.cards[id].due <= t)
+      .sort((a, b) => S.cards[a].due - S.cards[b].due).forEach((id) => add(id, "rev"));
+    Object.keys(S.cards).filter(inR).sort(byR).forEach((id) => add(id, "rev"));
+    return ids;
+  };
+  let ids = pickIds(DATA.items.slice().reverse().filter((i) => inRange(i.id) && !seen(i.id)).sort((a, b) => (b.wrong ? 1 : 0) - (a.wrong ? 1 : 0)), inRange);   // 同每日：錯題先、再從最近教的開始
+  if (jh) {
+    const inJh = (id) => !!JH[id] && !(J && J.set.includes(id));
+    const jids = pickIds(JH_LIST.filter((i) => inJh(i.id) && !seen(i.id)), inJh), mix = [];
+    for (let i = 0; mix.length < size && (i < ids.length || i < jids.length); i++) {   // 兩邊輪流放，免得一邊佔滿
+      if (i < ids.length) mix.push(ids[i]);
+      if (i < jids.length && mix.length < size) mix.push(jids[i]);
+    }
+    ids = mix;
+  }
+  const forgot = jh ? forgotCounts(S.log, t) : {};
+  return { queue: shuffle(ids).map((x) => ({ id: x.id, k: JH[x.id] && !(forgot[x.id] >= FORGOT_MIN) ? "jrec" : "recall",
+    tag: JH[x.id] && forgot[x.id] >= FORGOT_MIN ? "jhs" : x.tag, steps: null, step: 0, hard: 0, after: 0, t: 0 })), ans: 0, real: 0, fails: {}, day: dayOf(t) };
 }
 
 /* ============================================================
@@ -666,12 +756,29 @@ function distractors(it) {
   return shuffle(out.map((x) => x.zh).concat([it.zh]));
 }
 
+// 國中字認得卡的干擾選項：同詞性先；不能是這個字的同義字（syn，兩個方向都擋），
+// 也不能跟正解有任何一個義項（以「；」分開）相同；四個選項的中文不重複
+const senses = (zh) => String(zh).split(/[；;]/).map((x) => x.trim()).filter(Boolean);
+function jhDistractorItems(it) {
+  const mine = new Set(senses(it.zh)), syn = new Set(it.syn);
+  const pool = JH_LIST.filter((x) => x.id !== it.id && !syn.has(x.id) && !x.syn.includes(it.id) && x.zh !== it.zh && !senses(x.zh).some((z) => mine.has(z)));
+  const p1 = it.pos.split("/")[0];
+  const tiers = [pool.filter((x) => x.kind === it.kind && x.pos.split("/")[0] === p1), pool.filter((x) => x.kind === it.kind), pool];
+  const out = [];
+  for (const tier of tiers) for (const x of shuffle(tier)) {
+    if (out.length < 3 && !out.some((o) => o.zh === x.zh)) out.push(x);
+  }
+  return out;
+}
+const jhOptions = (it) => shuffle(jhDistractorItems(it).map((x) => x.zh).concat([it.zh]));
+
 /* ============================================================
    音檔：全程只用同一個 <audio>（Android 同時太多 media element 會壞）
    ============================================================ */
 const au = document.getElementById("au");
 function play(file) {
   if (!file || clock.t != null) return;
+  au.pause();   // 先停上一張的，再換檔
   au.src = "audio/" + file;
   const p = au.play();
   if (p && p.catch) p.catch((e) => { if (e.name !== "AbortError" && e.name !== "NotAllowedError") console.warn("audio", e.name); });
@@ -724,9 +831,21 @@ function home() {
       <div class="small mut mt">每張都要拼對才算過；拼錯的會隔幾張再出。</div>`;
   }
   h += `<div class="stat mt"><div><b>${D.ans}</b>今日已答</div><div><b>${learnedSeen}/${learnedItems}</b>舊字已檢測</div><div><b>${daysBetween(day, EXAM_DATE)}</b>距統測天數</div></div></div>`;
+  if (JH_LIST.length) {
+    const J = todayJh(t);
+    h += `<div class="card" id="jhCard"><div class="lbl">國中基本字</div>`;
+    if (!J) h += `<div class="small mut">今天是上課日，國中字休息</div>`;
+    else if (!J.set.length) h += `<div class="small mut">今天沒有國中字要複習</div>`;
+    else if (J.passed) h += `<div class="done"><div class="big">國中字完成</div><div class="small mut">${J.set.length} 題・花了約 ${Math.max(1, Math.round(J.ms / MIN))} 分鐘</div></div>`;
+    else h += `<button class="btn blue" id="goJh">${J.ans ? "繼續" : "開始"}<span class="s">今天 ${J.set.length} 題・約 ${Math.ceil(remainSec(J) / 60)} 分鐘</span></button>
+      <div class="small mut mt">看英文選中文；跟統測的過關分開算。</div>`;
+    h += `</div>`;
+  }
   h += `<div class="row2"><button class="btn ghost" id="goFree">總複習</button><button class="btn ghost" id="goRead">閱讀</button></div>`;
   main.innerHTML = h;
-  if ($("goDaily")) $("goDaily").onclick = () => startSession(D, "daily");
+  // 點下去才取今天的清單物件（同步合併可能已換掉畫面當時那個）
+  if ($("goDaily")) $("goDaily").onclick = () => startSession(today(now()), "daily");
+  if ($("goJh")) $("goJh").onclick = () => { const J = todayJh(now()); if (J) startSession(J, "jh"); else home(); };
   if ($("goMore")) $("goMore").onclick = () => {
     const banks = new Set(LEARNED.concat(SCHEDULE.filter((x) => x.date <= day).map((x) => x.bank)));
     startSession(buildFree(banks, 10, now()), "free");
@@ -743,15 +862,16 @@ function nextCard() {
   const pk = pick(Q, t);
   if (!pk) return sessionDone();
   session.n++;
-  if (session.kind === "free") setHeader("練習", `還剩 ${Q.queue.filter((e) => e.k === "recall").length} 張（不影響今天過關）`, true);
+  if (session.kind === "free") setHeader("練習", `還剩 ${Q.queue.filter((e) => e.k === "recall" || e.k === "jrec").length} 張（不影響今天過關）`, true);
+  else if (session.kind === "jh") setHeader("國中基本字", `${Q.set.length} 題・已過 ${passedCount(Q)}・還要約 ${Math.ceil(remainSec(Q) / 60)} 分鐘`, true);
   else setHeader("今日任務", `${Q.set.length} 張・已過 ${passedCount(Q)}・還要約 ${Math.ceil(remainSec(Q) / 60)} 分鐘`, true);
-  ({ input: renderInput, recog: renderRecog, recall: renderRecall, boost: renderBoost })[pk.e.k](pk);
+  ({ input: renderInput, recog: renderRecog, recall: renderRecall, boost: renderBoost, jrec: renderJrec })[pk.e.k](pk);
   window.scrollTo(0, 0);   // 上一張背面很長、捲到下面按「下一張」時，新卡要回到頂端
 }
 function sessionDone() {
   const kind = session.kind;
   session = null;
-  if (kind === "daily") return home();
+  if (kind === "daily" || kind === "jh") return home();
   setHeader("完成", "", true);
   main.innerHTML = `<div class="card center"><div class="big" style="font-size:20px">這組練完了</div>
     <button class="btn mt" id="goHome">回首頁</button></div>`;
@@ -768,7 +888,7 @@ function sentHtml(s) {
     ${s.zh ? `<div class="zh">${esc(s.zh)}</div>` : ""}</div>`;
 }
 const TAGS = { mock: '<span class="tag red">明天要考</span>', batch: '<span class="tag green">本批</span>', new: '<span class="tag green">新字</span>',
-  fc: '<span class="tag">首次檢測</span>', rev: '<span class="tag">複習</span>' };
+  fc: '<span class="tag">首次檢測</span>', rev: '<span class="tag">複習</span>', jhs: '<span class="tag">國中・拼寫</span>' };
 function backHtml(it, n) {
   return `<div class="word mt">${esc(it.en)}</div>
     <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
@@ -811,11 +931,11 @@ function renderRecog(pk) {
 
 // 每日主卡：中→英拼寫。打字一定在翻面之前；送出才翻面
 function renderRecall(pk) {
-  const e = pk.e, it = ITEMS[e.id];
+  const e = pk.e, it = itemOf(e.id);
   const t0 = performance.now();
   const again = (session.Q.fails || {})[e.id];
   main.innerHTML = `<div class="q" data-id="${esc(e.id)}">
-    <div>${TAGS[e.tag] || ""}${again ? '<span class="tag red">再拼一次</span>' : ""}<span class="tag">拼寫</span></div>
+    <div>${TAGS[e.tag] || ""}${again ? '<span class="tag red">再拼一次</span>' : ""}${e.tag === "jhs" ? "" : '<span class="tag">拼寫</span>'}</div>
     <div class="zhbig mt">${esc(it.zh)}</div>
     <div class="pos">${esc(it.pos)}</div>
     ${it.collocations.length ? `<div class="colls">${it.collocations.map((c) => `<div>${collFront(c)}　<span class="mut">${esc(c.zh)}</span></div>`).join("")}</div>` : ""}
@@ -850,7 +970,7 @@ function renderRecall(pk) {
 
 // 加強卡：同一字今天錯滿 4 次 → 例句＋發音＋照抄 3 次
 function renderBoost(pk) {
-  const it = ITEMS[pk.e.id];
+  const it = itemOf(pk.e.id);
   main.innerHTML = `<div class="q"><div><span class="tag red">加強卡</span><span class="small mut">這個字今天錯好幾次了，慢慢看、照著打三次</span></div>
     ${backHtml(it, 3)}
     <div class="lbl mt">照著打 3 次：${esc(it.ans)}</div>
@@ -865,6 +985,40 @@ function renderBoost(pk) {
   $("ok").onclick = () => { finishOther(session.Q, pk, now()); nextCard(); };
 }
 
+// 國中基本字認得卡：英文＋自動播發音 → 四個中文選一個 → 選對自動下一張；選錯翻面（評分、英文、詞性、中文、發音）＋下一張
+function renderJrec(pk) {
+  const e = pk.e, it = itemOf(e.id), opts = jhOptions(it);
+  const t0 = performance.now();
+  const again = (session.Q.fails || {})[e.id];
+  main.innerHTML = `<div class="q" data-id="${esc(e.id)}">
+    <div>${TAGS[e.tag] || ""}${again ? '<span class="tag red">再選一次</span>' : ""}<span class="tag">國中・認得</span></div>
+    <div class="word mt">${esc(it.en)}</div>
+    <div class="center mt">${playBtn(it.audio)}</div>
+    <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join("")}</div>
+    <div id="fb"></div></div>`;
+  play(it.audio);
+  let done = false;
+  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => {
+    if (done) return; done = true;
+    const ms = performance.now() - t0, ok = opts[+btn.dataset.i] === it.zh, Q = session.Q;
+    const g = answerRecall(Q, pk, ok, ms, now());
+    main.querySelectorAll(".opt").forEach((b) => { b.disabled = true; if (opts[+b.dataset.i] === it.zh) b.classList.add("correct"); });
+    const label = `${GRADE_TXT[g]}${g === 1 ? "" : `・${Math.round(ms / 1000)} 秒`}`;
+    if (ok) {   // 選對：亮綠＋評分約 0.8 秒，自動下一張
+      $("fb").innerHTML = `<div class="center mt"><span class="grade g${g}">${label}</span></div>`;
+      setTimeout(() => { if (session && session.Q === Q && main.querySelector(".q") && main.querySelector(".q").dataset.id === e.id) nextCard(); }, 800);
+      return;
+    }
+    btn.classList.add("wrong");
+    $("fb").innerHTML = `<div class="mt"><span class="grade g${g}">${label}</span></div>
+      <div class="word mt" style="font-size:28px">${esc(it.en)}</div>
+      <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
+      <div class="zhbig" style="font-size:20px">${esc(it.zh)}</div>
+      <button class="btn mt" id="nx">下一張</button>`;
+    $("nx").onclick = nextCard;
+  });
+}
+
 /* ---------- 總複習選範圍 ---------- */
 function freePicker() {
   setHeader("總複習", "選範圍（不影響今天的過關）", true);
@@ -877,14 +1031,15 @@ function freePicker() {
       const its = BANK_ITEMS[b], s = its.filter((i) => seen(i.id)).length;
       return `<label class="bank"><input type="checkbox" class="bk" value="${b}" checked> ${bankName(b)}<span class="r">${s}/${its.length} 已練</span></label>`;
     }).join("")}
+    ${JH_LIST.length ? `<label class="bank" style="margin-top:6px"><input type="checkbox" id="jhChk"> 國中基本字<span class="r">${JH_LIST.filter((i) => seen(i.id)).length}/${JH_LIST.length} 已練</span></label>` : ""}
     <div class="lbl mt">張數</div>
     <div class="row2"><button class="btn ghost sz" data-n="10">10 張</button><button class="btn sz" data-n="20">20 張</button></div>
   </div>`;
   $("all").onchange = (e) => main.querySelectorAll(".bk").forEach((c) => c.checked = e.target.checked);
   main.querySelectorAll(".sz").forEach((b) => b.onclick = () => {
-    const sel = new Set([...main.querySelectorAll(".bk:checked")].map((c) => c.value));
-    if (!sel.size) return toast("至少選一個範圍");
-    startSession(buildFree(sel, +b.dataset.n, now()), "free");
+    const sel = new Set([...main.querySelectorAll(".bk:checked")].map((c) => c.value)), jh = !!($("jhChk") && $("jhChk").checked);
+    if (!sel.size && !jh) return toast("至少選一個範圍");
+    startSession(buildFree(sel, +b.dataset.n, now(), jh), "free");
   });
 }
 
@@ -1051,12 +1206,12 @@ async function teacherStudent(id, name, flash) {
   bindCopy();
   main.querySelectorAll("tr[data-unit]").forEach((tr) => tr.onclick = () => {
     // 單元明細：把儀表板整個收起來（不重抓雲端），返回時原樣放回、捲回原位
-    const saved = [...main.childNodes], bk = tr.dataset.unit, y = window.scrollY;
-    if (!BANK_ITEMS[bk]) return;
+    const saved = [...main.childNodes], bk = tr.dataset.unit, y = window.scrollY, jh = bk === "jh";
+    if (!jh && !BANK_ITEMS[bk]) return;
     const back = () => { main.replaceChildren(...saved); setHeader(name, sub, true); $("back").onclick = () => teacherHome(); window.scrollTo(0, y); };
-    setHeader(name, bankName(bk) + " 每個字的記憶狀況", true);
+    setHeader(name, (jh ? "國中基本字" : bankName(bk)) + " 每個字的記憶狀況", true);
     $("back").onclick = back;
-    main.innerHTML = `<button class="btn ghost" id="ub">← 回儀表板</button><div class="mt"></div>` + unitHtml(st, now(), bk) +
+    main.innerHTML = `<button class="btn ghost" id="ub">← 回儀表板</button><div class="mt"></div>` + (jh ? jhHtml(st, now()) : unitHtml(st, now(), bk)) +
       `<button class="btn ghost" id="ub2">← 回儀表板</button>`;
     bindUnit(main);
     $("ub").onclick = $("ub2").onclick = back;
@@ -1132,6 +1287,18 @@ function dashHtml(st, t) {
     ${rows.map((r) => `<tr class="tap" data-unit="${esc(r.bk)}"><td>${esc(bankName(r.bk))}</td><td class="n">${r.seen}/${r.n}</td><td>${pct(r.avg)}<div class="bar"><div style="width:${Math.round(r.avg * 100)}%"></div></div></td>
       <td class="n${r.weak ? " rr" : ""}">${r.weak}</td><td class="n go">›</td></tr>`).join("")}</table>
     <div class="small mut mt">弱字＝記憶率 &lt; 70%（複習答對就會回升、自然離開）</div>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
+  // 國中基本字
+  if (JH_LIST.length) {
+    const fcn = forgotCounts(st.log, t), rs = JH_LIST.map((i) => Rof(i.id)).filter((r) => r != null);
+    const avg = rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null, Jt = Dt && Dt.jh;
+    const nWeak = JH_LIST.filter((i) => isWeak(st.cards[i.id], Rof(i.id))).length, nOften = JH_LIST.filter((i) => fcn[i.id] >= FORGOT_MIN).length;
+    const td = !Jt ? (Dt && isClassDay(Dt, day) ? "今天上課日，國中字休息" : "今天還沒排國中字") : !Jt.set.length ? "今天沒有國中字要複習"
+      : Jt.passed ? `今天國中字完成（${Jt.set.length} 題・約 ${mins(Jt.ms)} 分鐘）` : Jt.ans ? `今天國中字還沒做完（${passedCount(Jt)}/${Jt.set.length}・約 ${mins(Jt.ms)} 分鐘）` : "今天國中字還沒開始";
+    h += `<div class="card"><div class="lbl">國中基本字・點一列看每個字</div><table class="t"><tr><th>範圍</th><th class="n">已檢測</th><th>平均記憶率</th><th class="n">弱字</th><th class="n">常忘</th><th></th></tr>
+      <tr class="tap" data-unit="jh"><td>國中 1200</td><td class="n">${rs.length}/${JH_LIST.length}</td><td>${pct(avg)}<div class="bar"><div style="width:${Math.round((avg || 0) * 100)}%"></div></div></td>
+      <td class="n${nWeak ? " rr" : ""}">${nWeak}</td><td class="n${nOften ? " rr" : ""}">${nOften}</td><td class="n go">›</td></tr></table>
+      <div class="small mut mt">${esc(td)}</div></div>`;
+  }
   // 積欠
   const tmr = dayStart(addDays(day, 1));
   const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
@@ -1148,7 +1315,7 @@ const FORGOT_DAYS = 30, FORGOT_MIN = 2;
 function forgotCounts(log, t) {
   const first = {};
   log.forEach((e) => {
-    if (!fin(e.t) || !ITEMS[e.id] || e.t > t || e.t <= t - FORGOT_DAYS * DAY) return;
+    if (!fin(e.t) || !itemOf(e.id) || e.t > t || e.t <= t - FORGOT_DAYS * DAY) return;
     const k = e.id + "|" + dayOf(e.t);
     if (!first[k] || e.t < first[k].t) first[k] = e;
   });
@@ -1156,7 +1323,7 @@ function forgotCounts(log, t) {
   Object.values(first).forEach((e) => { if (e.g === 1) n[e.id] = (n[e.id] || 0) + 1; });
   return n;
 }
-const GRADE_TXT = { 1: "重來", 2: "困難", 3: "良好" };
+const GRADE_TXT = { 1: "重來", 2: "困難", 3: "良好", 4: "秒答" };
 const pad2 = (n) => String(n).padStart(2, "0");
 const mmdd = (d) => d.slice(5, 7) + "/" + d.slice(8, 10);
 const tpeTime = (t) => { const s = new Date(t + 8 * HOUR).toISOString(); return mmdd(s) + " " + s.slice(11, 16); };
@@ -1166,12 +1333,7 @@ function chipHtml(e) {
 }
 function unitHtml(st, t, bk) {
   const day = dayOf(t), its = BANK_ITEMS[bk] || [];
-  const logs = {};
-  st.log.forEach((e) => { if (fin(e.t) && ITEMS[e.id]) (logs[e.id] = logs[e.id] || []).push(e); });
-  const rows = its.map((it) => {
-    const c = st.cards[it.id];
-    return { it, c, r: c ? fsrs.R(Math.max(0, (t - c.last) / DAY), Math.max(0.1, c.st)) : null, log: (logs[it.id] || []).slice().sort((a, b) => a.t - b.t) };
-  }).sort((a, b) => (a.r == null) - (b.r == null) || (a.r - b.r) || ((b.c ? +b.c.lapses || 0 : 0) - (a.c ? +a.c.lapses || 0 : 0)));
+  const rows = wordRows(st, t, its);
   const seenRows = rows.filter((x) => x.c);
   const avg = seenRows.length ? seenRows.reduce((s, x) => s + x.r, 0) / seenRows.length : null;
   const nWeak = rows.filter((x) => isWeak(x.c, x.r)).length, fc = forgotCounts(st.log, t);
@@ -1179,25 +1341,54 @@ function unitHtml(st, t, bk) {
     <div class="small mut">平均記憶率 ${avg == null ? "—" : Math.round(avg * 100) + "%"}・練過 ${seenRows.length}/${its.length}・弱字 ${nWeak}</div>
     <div class="small mut">點一個字看完整作答紀錄。綠 ≥ 90%、黃 70–90%、紅 &lt; 70%（紅＝弱字）</div>
     <div class="small mut">「常忘」＝最近 ${FORGOT_DAYS} 天有 ${FORGOT_MIN} 天以上第一次就拼不出來；之後一直記得，最晚 ${FORGOT_DAYS} 天自動拿掉</div></div><div class="card">`;
-  rows.forEach((x, i) => {
-    const { it, c, r } = x;
-    let rTxt = "未練", rCls = "rn", due = "", hist;
-    if (c) {
-      rTxt = Math.round(r * 100) + "%"; rCls = r >= 0.9 ? "rg" : r >= 0.7 ? "ra" : "rr";
-      const dd = dayOf(c.due), late = daysBetween(dd, day);
-      due = late > 0 ? `<span class="rr">已到期 ${late} 天</span>` : late === 0 ? "今天" : mmdd(dd);
-      const left = (c.last + Math.max(0.1, c.st) * DAY - t) / DAY;
-      const stab = left >= 1 ? `約 ${Math.round(left)} 天後記憶率掉到 90%` : left > 0 ? "不到 1 天後記憶率掉到 90%" : `記憶率已經低於 90%（約 ${Math.max(1, Math.round(-left))} 天前掉到 90%）`;
-      hist = `<div><b>${stab}</b></div>`;
-    } else hist = `<div><b>還沒練過這個字</b></div>`;
-    hist += x.log.length ? x.log.slice().reverse().map((e) => `<div>${esc(tpeTime(e.t))}　${chipHtml(e)}${e.m === "f" ? ' <span class="small mut">自由練習</span>' : ""}</div>`).join("")
-      : `<div class="mut">沒有作答紀錄</div>`;
-    h += `<div class="wd" data-w="${i}"><div class="top"><b>${esc(it.en)}</b><span class="small mut">${esc(it.zh)}</span>${fc[it.id] >= FORGOT_MIN ? `<span class="tag red often">常忘 ${fc[it.id]} 次</span>` : ""}<span class="r ${rCls}">${rTxt}</span></div>
-      ${c ? `<div class="small mut">下次複習 ${due}・練過 ${+c.reps || 0} 次・忘記 ${+c.lapses || 0} 次</div>` : ""}
-      ${x.log.length ? `<div class="chips">${x.log.slice(-5).map(chipHtml).join("")}</div>` : ""}
-      <div class="wh" hidden>${hist}</div></div>`;
-  });
+  rows.forEach((x, i) => { h += wordRowHtml(x, i, fc, day, t); });
   return h + `</div>`;
+}
+// 一個字一列（單元明細、國中基本字明細共用）
+function wordRowHtml(x, i, fc, day, t) {
+  const { it, c, r } = x;
+  let rTxt = "未練", rCls = "rn", due = "", hist;
+  if (c) {
+    rTxt = Math.round(r * 100) + "%"; rCls = r >= 0.9 ? "rg" : r >= 0.7 ? "ra" : "rr";
+    const dd = dayOf(c.due), late = daysBetween(dd, day);
+    due = late > 0 ? `<span class="rr">已到期 ${late} 天</span>` : late === 0 ? "今天" : mmdd(dd);
+    const left = (c.last + Math.max(0.1, c.st) * DAY - t) / DAY;
+    const stab = left >= 1 ? `約 ${Math.round(left)} 天後記憶率掉到 90%` : left > 0 ? "不到 1 天後記憶率掉到 90%" : `記憶率已經低於 90%（約 ${Math.max(1, Math.round(-left))} 天前掉到 90%）`;
+    hist = `<div><b>${stab}</b></div>`;
+  } else hist = `<div><b>還沒練過這個字</b></div>`;
+  hist += x.log.length ? x.log.slice().reverse().map((e) => `<div>${esc(tpeTime(e.t))}　${chipHtml(e)}${e.m === "f" ? ' <span class="small mut">自由練習</span>' : ""}</div>`).join("")
+    : `<div class="mut">沒有作答紀錄</div>`;
+  return `<div class="wd" data-w="${i}"><div class="top"><b>${esc(it.en)}</b><span class="small mut">${esc(it.zh)}</span>${fc[it.id] >= FORGOT_MIN ? `<span class="tag red often">常忘 ${fc[it.id]} 次</span>` : ""}<span class="r ${rCls}">${rTxt}</span></div>
+    ${c ? `<div class="small mut">下次複習 ${due}・練過 ${+c.reps || 0} 次・忘記 ${+c.lapses || 0} 次</div>` : ""}
+    ${x.log.length ? `<div class="chips">${x.log.slice(-5).map(chipHtml).join("")}</div>` : ""}
+    <div class="wh" hidden>${hist}</div></div>`;
+}
+// 每個字的記憶率＋作答紀錄，最弱的排前面、沒練過的排最後（單元明細、國中基本字共用）
+function wordRows(st, t, its) {
+  const logs = {};
+  st.log.forEach((e) => { if (fin(e.t) && itemOf(e.id)) (logs[e.id] = logs[e.id] || []).push(e); });
+  return its.map((it) => {
+    const c = st.cards[it.id];
+    return { it, c, r: c ? fsrs.R(Math.max(0, (t - c.last) / DAY), Math.max(0.1, c.st)) : null, log: (logs[it.id] || []).slice().sort((a, b) => a.t - b.t) };
+  }).sort((a, b) => (a.r == null) - (b.r == null) || (a.r - b.r) || ((b.c ? +b.c.lapses || 0 : 0) - (a.c ? +a.c.lapses || 0 : 0)));
+}
+// 國中基本字明細（純函式；selftest 會測）：上面先列「要注意的字」（弱字＋常忘），下面依字首字母分組
+function jhHtml(st, t) {
+  const day = dayOf(t), rows = wordRows(st, t, JH_LIST), fc = forgotCounts(st.log, t);
+  const seenRows = rows.filter((x) => x.c), avg = seenRows.length ? seenRows.reduce((a, x) => a + x.r, 0) / seenRows.length : null;
+  const often = (x) => fc[x.it.id] >= FORGOT_MIN, weak = rows.filter((x) => isWeak(x.c, x.r) || often(x));
+  let i = 0;
+  let h = `<div class="card"><div class="big">國中基本字</div>
+    <div class="small mut">已檢測 ${seenRows.length}/${rows.length}・平均記憶率 ${avg == null ? "—" : Math.round(avg * 100) + "%"}・弱字 ${rows.filter((x) => isWeak(x.c, x.r)).length}・常忘 ${rows.filter(often).length}</div>
+    <div class="small mut">點一個字看完整作答紀錄。綠 ≥ 90%、黃 70–90%、紅 &lt; 70%（紅＝弱字）；常忘的字每日清單會改考拼寫</div></div>`;
+  h += `<div class="card"><div class="lbl">要注意的字（弱字＋常忘，最弱的在前）</div>${weak.length ? weak.map((x) => wordRowHtml(x, i++, fc, day, t)).join("") : '<div class="mut small">目前沒有</div>'}</div>`;
+  const groups = {};
+  rows.forEach((x) => { const L = (x.it.en[0] || "?").toUpperCase(); (groups[L] = groups[L] || []).push(x); });
+  Object.keys(groups).sort().forEach((L) => {
+    const g = groups[L], gs = g.filter((x) => x.c).length;
+    h += `<div class="card"><div class="lbl">${esc(L)}　已檢測 ${gs}/${g.length}・弱字 ${g.filter((x) => isWeak(x.c, x.r)).length}</div>${g.map((x) => wordRowHtml(x, i++, fc, day, t)).join("")}</div>`;
+  });
+  return h;
 }
 function bindUnit(root) {
   root.querySelectorAll(".wd").forEach((w) => w.onclick = (ev) => {
@@ -1213,6 +1404,10 @@ async function runSelftest() {
   const out = [], results = [];
   const check = (name, ok, detail) => { results.push(!!ok); out.push(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? "　" + detail : ""}`); };
   store = { load: () => null, save: () => {} };   // 不碰真實存檔
+  // 國中字表還沒放進 cards.json → 用假字表跑國中字的測試（結束後換回來）
+  const realJh = JH_LIST.length > 0;
+  if (!realJh) indexJh(jhFixture(1000));
+  out.push(`國中字表：${realJh ? "cards.json 真資料" : "假字表（cards.json 還沒有 jh）"} ${JH_LIST.length} 字`);
   const T = (d, hm) => Date.parse(`${d}T${hm || "19:00"}:00+08:00`);
 
   // --- FSRS ---
@@ -1400,14 +1595,272 @@ async function runSelftest() {
   check("(e) 長期排程每字每天只評一次", !multiGrade);
   await syncSelftest(check, T);
   drillSelftest(check, T);
+  await jhSelftest(check, T);
+  const sim = jhSim(check, T);
+  if (!realJh) indexJh(DATA.jh && DATA.jh.items);
   out.push("\n逐日明細（張數／估計分／模擬分／作答次／首檢／加強卡／留到明天）：\n" +
     perDay.map((x) => `${x.day} ${x.set}張 估${x.est}分 實${x.min}分 答${x.ans} 首檢${x.fc} 加強${x.boosts} 留${x.backlog}${x.forced ? " ＊本批佔滿" : ""}`).join("\n"));
+  out.push("\n國中字＋統測 30 天模擬（逐日）：\n" + sim.join("\n"));
   const pass = results.every(Boolean);
   out.unshift(pass ? `SELFTEST PASS（${results.length} 項）` : `SELFTEST FAIL（${results.filter((x) => !x).length}/${results.length} 項失敗）`);
   setHeader("selftest", pass ? "全部通過" : "有失敗", false);
   main.innerHTML = `<pre id="selftest" data-pass="${pass}">${esc(out.join("\n"))}</pre>`;
   console.log(out.join("\n"));
   S = freshState();
+}
+
+/* ---------- 國中基本字 selftest ---------- */
+function jhFixture(n) {   // 假字表：中文刻意有很多共用義項（義0～義299），測干擾選項
+  const POS = ["n.", "v.", "adj.", "adv."], out = [];
+  for (let i = 0; i < n; i++) {
+    const en = "w" + String.fromCharCode(97 + i % 26) + i;
+    out.push({ id: "jh:" + en, en, kind: "word", pos: POS[i % 4], zh: `義${i % 300}；詞${i}`, ans: en, accept: [en], audio: "", syn: i % 50 === 3 ? ["jh:w" + String.fromCharCode(97 + (i + 7) % 26) + (i + 7)] : [] });
+  }
+  return out;
+}
+const blankDay = () => ({ set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, mock: null, mockFirst: {}, passed: false, ms: 0, lastAct: 0, est: 0, fc: 0, extra: 0 });
+function playAll(Q, t, okP, rr, msOf) {   // 把一個隊伍做完（拼錯照規則重排）；回傳結束時間
+  for (let k = 0; k < 3000; k++) {
+    const p = pick(Q, t);
+    if (!p) break;
+    if (p.e.k === "recall" || p.e.k === "jrec") { const ok = rr() < okP(p.e), ms = msOf(p.e, ok); answerRecall(Q, p, ok, ms, t); t += ms + (p.e.k === "jrec" ? 2500 : 4000); }
+    else { finishOther(Q, p, t); t += COST[p.e.k] * 1000; }
+  }
+  return t;
+}
+async function jhSelftest(check, T) {
+  const rr = rng(2026), all = () => 1, fast = () => 4000;
+  // 上課日沒有國中字
+  const cb = SCHEDULE.find((b) => BANK_ITEMS[b.bank]);
+  S = freshState();
+  let t = T(cb.date); clock.t = t;
+  const Dc = today(t), hadInput = Dc.queue.some((e) => e.k === "input"), j0 = todayJh(t);
+  t = playAll(Dc, t, all, rr, fast);
+  const j1 = todayJh(t), tn = T(addDays(cb.date, 1)), j2 = todayJh(tn);
+  check("國中字：上課日沒有國中字清單（新字輸入做完也不會冒出來）；隔天有",
+    hadInput && j0 === null && j1 === null && !S.days[cb.date].jh && j2 && j2.set.length > 0, `${cb.date} 上課日；隔天 ${j2 && j2.set.length} 題`);
+  // 首次檢測 ≤ 40、到期複習排前面、份量 ≤ 5 分鐘
+  const DAYX = "2026-11-20";
+  S = freshState(); t = T(DAYX); clock.t = t;
+  const due5 = JH_LIST.slice(100, 105).map((i) => i.id);
+  due5.forEach((id) => { S.cards[id] = { st: 5, df: 5, reps: 2, lapses: 0, last: t - 6 * DAY, due: t - DAY }; });
+  let J = todayJh(t);
+  const fcN = Math.min(JH_FIRST_CHECK_PER_DAY, Math.floor((JH_BUDGET_SEC - 5 * entryCost({ k: "jrec", tag: "rev" })) / entryCost({ k: "jrec", tag: "fc" }) + 1e-9));
+  const unseenIds = JH_LIST.filter((i) => !due5.includes(i.id)).map((i) => i.id);
+  check(`國中字：到期複習排在前面、再來首次檢測（照字表順序）；估計 ≤ ${JH_BUDGET_SEC / 60} 分鐘`,
+    J.fc === fcN && J.queue.slice(0, 5).every((e) => due5.includes(e.id) && e.tag === "rev" && e.k === "jrec") &&
+    J.queue.slice(5).map((e) => e.id).join() === unseenIds.slice(0, fcN).join() && J.est <= JH_BUDGET_SEC, `${J.set.length} 題、首檢 ${J.fc}、估 ${Math.round(J.est)} 秒`);
+  const Jbig = buildJh(DAYX, S.days[DAYX], t, 3600);
+  check(`國中字：份量夠時首次檢測每天最多 ${JH_FIRST_CHECK_PER_DAY} 個`, Jbig.fc === JH_FIRST_CHECK_PER_DAY && Jbig.queue.filter((e) => e.tag === "fc").length === JH_FIRST_CHECK_PER_DAY);
+  S = freshState(); t = T(DAYX); clock.t = t;
+  JH_LIST.slice(0, 100).forEach((i, k) => { S.cards[i.id] = { st: 5, df: 5, reps: 2, lapses: 0, last: t - (6 + k % 9) * DAY, due: t - DAY }; });
+  J = todayJh(t);
+  check("國中字：到期太多時只排放得下的（份量上限），當天不做首次檢測", J.fc === 0 && J.est <= JH_BUDGET_SEC && J.set.length === Math.floor(JH_BUDGET_SEC / entryCost({ k: "jrec", tag: "rev" }) + 1e-9),
+    `${J.set.length} 題`);
+  // 8 秒門檻＋首檢答得快 → 長間隔
+  const jg = (ok, ms) => gradeOf(ok, ms, JH_GOOD_MS, JH_FAST_MS);
+  check("國中字：分界（4.000 秒秒答、4.001 秒良好、8.000 秒良好、8.001 秒困難、選錯重來）；統測拼寫不受影響（4 秒拼對＝良好）",
+    jg(true, 4000) === 4 && jg(true, 4001) === 3 && jg(true, 8000) === 3 && jg(true, 8001) === 2 && jg(false, 1000) === 1 && gradeOf(true, 4000) === 3);
+  // 秒答 → 90 天；慢一點的照 FSRS（上限 90）
+  S = freshState(); t = T(DAYX); clock.t = t;
+  J = todayJh(t);
+  const f1 = J.set[0], f2 = J.set[1];
+  answerRecall(J, pick(J, t), true, 4000, t);
+  answerRecall(J, pick(J, t + 5000), true, 4001, t + 5000);
+  S.cards[J.set[2]] = { st: 20, df: 5, reps: 3, lapses: 0, last: t - 20 * DAY, due: t };   // 複習中的字也一樣
+  const rvE = { id: J.set[2], k: "jrec", tag: "rev", steps: null, step: 0, hard: 0, after: 0, t: 0 };
+  J.queue.unshift(rvE);
+  answerRecall(J, { e: rvE, i: 0 }, true, 3500, t + 9000);
+  check(`國中字：秒答（首檢、複習都一樣）→ ${JH_MAX_IVL} 天後再看；4.001 秒照 FSRS`,
+    daysBetween(DAYX, dayOf(S.cards[f1].due)) === JH_MAX_IVL && daysBetween(DAYX, dayOf(S.cards[J.set[2]].due)) === JH_MAX_IVL &&
+    daysBetween(DAYX, dayOf(S.cards[f2].due)) === Math.round(fsrs.ivl(fsrs.initS(4))), `4.001 秒 → ${dayOf(S.cards[f2].due)}`);
+  // 國中字不吃考前總掃、上限 90；統測照舊（上限 45＋考前總掃）
+  const tx = T("2027-03-01");
+  S.cards["jh:sweep"] = { st: 400, df: 3, reps: 9, lapses: 0, last: tx - 60 * DAY, due: tx };
+  review("jh:sweep", 3, tx);
+  S.cards["mainsw"] = { st: 400, df: 3, reps: 9, lapses: 0, last: tx - 60 * DAY, due: tx };
+  review("mainsw", 3, tx);
+  S.cards["jh:big"] = { st: 5000, df: 3, reps: 9, lapses: 0, last: T("2026-10-03") - 60 * DAY, due: 0 };
+  review("jh:big", 3, T("2026-10-03"));
+  check(`國中字：不拉進考前總掃、上限 ${JH_MAX_IVL} 天；統測卡照舊（上限 ${MAX_IVL} 天＋考前總掃）`,
+    dayOf(S.cards["jh:sweep"].due) === addDays("2027-03-01", JH_MAX_IVL) && dayOf(S.cards["jh:sweep"].due) > EXAM_DATE &&
+    dayOf(S.cards.mainsw.due) >= SWEEP_START && dayOf(S.cards.mainsw.due) < EXAM_DATE && dayOf(S.cards["jh:big"].due) === addDays("2026-10-03", JH_MAX_IVL),
+    `國中字 3/1 → ${dayOf(S.cards["jh:sweep"].due)}；統測 3/1 → ${dayOf(S.cards.mainsw.due)}`);
+  // 畫面：選對自動下一張（不用按）、選錯翻面＋下一張、錯的照規則重排、全部做完才完成
+  {
+    S = freshState(); t = T(DAYX); clock.t = t;
+    const Dq = today(t), Jq = Dq.jh = buildJh(DAYX, Dq, t, 25);
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms)), qId = () => (main.querySelector(".q") || { dataset: {} }).dataset.id;
+    const click = (right) => { const id = qId(), zh = itemOf(id).zh; [...main.querySelectorAll(".opt")].find((b) => (b.textContent === zh) === right).click(); return id; };
+    session = { Q: Jq, kind: "jh", n: 0 }; nextCard();
+    const id1 = click(true), nx1 = !!$("nx"), fb1 = $("fb").textContent;
+    await wait(900);
+    const id2 = qId(), adv = !!id2 && id2 !== id1 && !Jq.queue.some((e) => e.id === id1);
+    click(false);
+    const nx2 = !!$("nx") && /重來/.test($("fb").textContent) && $("fb").textContent.includes(itemOf(id2).zh), requeued = Jq.queue.some((e) => e.id === id2) && !Jq.passed;
+    $("nx").click();
+    let gateBad = false, k = 0;
+    while (session && k++ < 30) {
+      if (main.querySelector(".opt:not([disabled])")) { click(true); if (Jq.passed && Jq.queue.length) gateBad = true; await wait(900); }
+      else if ($("nx")) $("nx").click();
+      else await wait(50);
+    }
+    session = null;
+    check("國中字畫面：選對亮綠＋評分、約 0.8 秒自動下一張（沒有「下一張」）；選錯翻面＋下一張、照規則重排；全部做完才算完成",
+      !nx1 && /秒答/.test(fb1) && adv && nx2 && requeued && !gateBad && Jq.passed && !Jq.queue.length && Jq.ans === Jq.set.length + 2,
+      `${Jq.set.length} 題、作答 ${Jq.ans} 次`);
+  }
+  S = freshState(); t = T(DAYX); clock.t = t;
+  J = todayJh(t);
+  const ga = answerRecall(J, pick(J, t), true, 8000, t), ida = J.set[0];
+  const gb = answerRecall(J, pick(J, t + 9000), true, 8001, t + 9000), idb = J.set[1];
+  const gc = answerRecall(J, pick(J, t + 18000), false, 3000, t + 18000), idc = J.set[2];
+  check("國中字：認得卡實際評分（8 秒良好→首檢長間隔、超過困難、選錯重來並重排）",
+    ga === 3 && gb === 2 && gc === 1 && daysBetween(DAYX, dayOf(S.cards[ida].due)) >= 10 && J.graded[ida] === 3 && J.queue.some((e) => e.id === idc) && !J.queue.some((e) => e.id === ida),
+    `8 秒→${dayOf(S.cards[ida].due)}、8.001 秒→${dayOf(S.cards[idb].due)}`);
+  // 常忘 → 改考拼寫
+  const X = JH_LIST[0].id, Y = JH_LIST[1].id, Z = JH_LIST[2].id;
+  const setup = () => {
+    S = freshState(); t = T(DAYX); clock.t = t;
+    [X, Y, Z].forEach((id) => { S.cards[id] = { st: 2, df: 6, reps: 4, lapses: 2, last: t - 3 * DAY, due: t - DAY }; });
+    const miss = (id, ago) => S.log.push({ t: t - ago * DAY, id, g: 1, ms: 6000, m: "d" }, { t: t - ago * DAY + 5 * MIN, id, g: 3, ms: 3000, m: "d" });
+    miss(X, 3); miss(X, 10);              // 30 天內 2 天第一次就錯 → 拼寫
+    miss(Y, 3);                           // 只有 1 天
+    miss(Z, 31); miss(Z, 40);             // 太久以前
+    S.log.push({ t: t - 5 * DAY, id: Y, g: 3, ms: 3000, m: "d" }, { t: t - 5 * DAY + MIN, id: Y, g: 1, ms: 3000, m: "d" });   // 第一次對、之後錯：不算
+    S.log.sort((a, b) => a.t - b.t);
+  };
+  setup();
+  J = todayJh(t);
+  const kOf = (id) => (J.queue.find((e) => e.id === id) || {});
+  check("國中字：最近 30 天有 2 天第一次就錯 → 改考拼寫（國中・拼寫）；只 1 天、太久以前的照舊認得卡",
+    kOf(X).k === "recall" && kOf(X).tag === "jhs" && kOf(Y).k === "jrec" && kOf(Z).k === "jrec", [X, Y, Z].map((id) => id + ":" + kOf(id).k).join(" "));
+  session = { Q: J, kind: "jh", n: 0 };
+  const px = { e: kOf(X), i: J.queue.indexOf(kOf(X)) };
+  renderRecall(px);
+  const tagOk = /國中・拼寫/.test(main.innerHTML) && main.querySelector("#inp");
+  const gx = answerRecall(J, px, true, 15000, t);
+  session = null;
+  check("國中字：升級後是拼寫卡（標「國中・拼寫」、20 秒門檻：15 秒拼對＝良好）", tagOk && gx === 3);
+  // 干擾選項
+  const bad = [];
+  const checkOpts = (it) => {
+    const ds = jhDistractorItems(it), o = jhOptions(it), mine = senses(it.zh);
+    if (ds.length !== 3 || o.length !== 4 || new Set(o).size !== 4 || !o.includes(it.zh) ||
+      ds.some((x) => it.syn.includes(x.id) || x.syn.includes(it.id) || senses(x.zh).some((z) => mine.includes(z)))) bad.push(it.en + "→" + ds.map((x) => x.zh).join("/"));
+  };
+  JH_LIST.forEach((it) => { for (let k = 0; k < 2; k++) checkOpts(it); });
+  const keepJh = JH_LIST;
+  const adv = [["big", "adj.", "大的", ["large"]], ["large", "adj.", "大的；巨大的", ["big"]], ["huge", "adj.", "巨大的", []], ["happy", "adj.", "快樂的", []],
+    ["glad", "adj.", "高興的；快樂的", ["happy"]], ["small", "adj.", "小的", []], ["little", "adj.", "小的；少的", []], ["tall", "adj.", "高的", []],
+    ["short", "adj.", "矮的；短的", []], ["long", "adj.", "長的", []], ["hot", "adj.", "熱的；辣的", []], ["spicy", "adj.", "辣的", []], ["sick", "adj.", "生病的", ["ill"]],
+    ["ill", "adj.", "不舒服的", []], ["sad", "adj.", "難過的", []], ["apple", "n.", "蘋果", []], ["dog", "n.", "狗", []], ["a few", "phr.", "一些", []]];
+  indexJh(adv.map(([en, pos, zh, syn]) => ({ id: "jh:" + en, en, kind: en.includes(" ") ? "phrase" : "word", pos, zh, ans: en, audio: "", syn: syn.map((x) => "jh:" + x) })));
+  JH_LIST.forEach((it) => { if (it.kind === "word") for (let k = 0; k < 40; k++) checkOpts(it); });
+  const ill = jhDistractorItems(JH["jh:ill"]);
+  let posMix = 0;
+  for (let k = 0; k < 40; k++) if (jhDistractorItems(JH["jh:big"]).some((x) => x.pos !== "adj.")) posMix++;
+  JH_LIST = keepJh; JH = {}; JH_LIST.forEach((it) => { JH[it.id] = it; });
+  check("國中字：干擾選項 4 選 1、不重複、含正解；不會是同義字（syn 兩個方向）或跟正解共用義項（big/large、glad/happy、hot/spicy）",
+    !bad.length && !ill.some((x) => x.en === "sick") && !posMix, bad.slice(0, 5).join("; ") || `全部 ${keepJh.length} 字＋刁鑽字組都合格`);
+  // 國中字不影響統測過關；統測也不影響國中字
+  S = freshState(); t = T(DAYX); clock.t = t;
+  let D = today(t); J = todayJh(t);
+  const mainBefore = canon(Object.assign({}, D, { jh: undefined }));
+  t = playAll(J, t, all, rr, fast);
+  const mainAfterJh = canon(Object.assign({}, D, { jh: undefined }));
+  const jBefore = canon(J), mainPassedByJh = D.passed;
+  t = playAll(D, t + 60e3, () => 0.9, rr, () => 9000);
+  check("國中字：做完國中字不會讓統測過關（統測那份一點都沒變）；統測過關也不動國中字",
+    J.passed && !mainPassedByJh && mainBefore === mainAfterJh && D === S.days[DAYX] && canon(J) === jBefore, `國中字 ${J.set.length} 題完成`);
+  check("國中字：統測過關只看統測那份", D.passed);
+  // 自由練習不碰今天的國中字清單
+  S = freshState(); t = T(DAYX); clock.t = t;
+  D = today(t); J = todayJh(t);
+  const jSnap = canon(J), cSnap = canon(J.set.map((id) => S.cards[id] || null));
+  const F = buildFree(new Set(), 20, t, true), Fm = buildFree(new Set(DATA.banks), 20, t, true);
+  playAll(F, t, () => 0.7, rr, fast);
+  check("國中字：總複習勾國中字 → 抽國中字（不含今天的國中字清單），做完不動今天的清單與卡",
+    F.queue.length === 0 && F.ans >= 20 && canon(J) === jSnap && canon(J.set.map((id) => S.cards[id] || null)) === cSnap &&
+    Fm.queue.some((e) => isJh(e.id)) && Fm.queue.some((e) => !isJh(e.id)) && !Fm.queue.some((e) => J.set.includes(e.id)), `混合 ${Fm.queue.filter((e) => isJh(e.id)).length}/${Fm.queue.length} 張國中字`);
+  // 合併規則（純函式）
+  const jd = (ans, passed) => ({ set: [], queue: [], ans, graded: {}, fails: {}, boosts: {}, passed, ms: ans * 5000 });
+  const A = freshState(), B = freshState(), d0 = "2026-11-20";
+  A.days[d0] = Object.assign(blankDay(), { ans: 30, passed: true, ms: 9e5 });
+  B.days[d0] = Object.assign(blankDay(), { ans: 2, ms: 1e4, jh: jd(15, true) });
+  const m1 = mergeState(A, B), m2 = mergeState(B, A), pd = (diffState(A, B).days || {})[d0];
+  check("同步／國中字合併：統測那份跟國中字那份各自留進度多的（兩個方向一樣）；上傳送拼好的那天",
+    m1.days[d0].ans === 30 && m1.days[d0].jh.ans === 15 && m2.days[d0].ans === 30 && m2.days[d0].jh.ans === 15 &&
+    pd && pd.ans === 30 && pd.jh && pd.jh.ans === 15 && !Object.keys(diffState(B, m1).days || {}).length);
+  A.days[d0].jh = jd(40, false);
+  check("同步／國中字合併：國中字也是過關 > 作答次數", mergeState(A, B).days[d0].jh.passed === true && mergeState(B, A).days[d0].jh.passed === true);
+  check("同步／國中字合併：作答中那天整天留這台（隊伍物件不換）", mergeState(A, B, d0).days[d0] === A.days[d0]);
+  const cl = cleanState({ days: { [d0]: Object.assign(blankDay(), { ans: 3, jh: { set: "x" } }), "2026-11-21": Object.assign(blankDay(), { jh: jd(2, false) }) } });
+  check("同步／國中字：雲端資料清洗：國中字那份形狀不對只丟掉它，統測那天照留", cl.days[d0] && cl.days[d0].ans === 3 && !("jh" in cl.days[d0]) && cl.days["2026-11-21"].jh.ans === 2);
+  // 老師端
+  S = freshState(); t = T(DAYX); clock.t = t;
+  J = todayJh(t); playAll(J, t, () => 0.8, rr, fast);
+  const dh = dashHtml(S, t + HOUR), jx = jhHtml(S, t + HOUR), box = document.createElement("div");
+  box.innerHTML = jx; bindUnit(box);
+  check("老師端國中字：儀表板卡片＋明細算得出來、依字母分組、沒有 undefined / NaN",
+    /data-unit="jh"/.test(dh) && /國中字完成/.test(dh) && box.querySelectorAll(".wd").length >= JH_LIST.length && !/undefined|NaN/.test(dh + jx),
+    `${box.querySelectorAll(".card").length} 張卡片`);
+  clock.t = null; S = freshState();
+}
+
+// 國中字＋統測一起跑：每天統測做完 → 國中字做完 → 總複習 10 張（統測範圍）
+function jhSim(check, T) {
+  S = freshState();
+  const r3 = rng(777), r4 = rng(31337), START = "2026-10-03", N = +qs.get("jhdays") || 70, rows = [], per = [];
+  let doneDay = null;
+  const msMain = (e, ok) => ok ? (r3() < 0.2 ? 25000 : 9000) : 12000;
+  // 假設的學生（認得卡，每次作答）：當天第一次 70% 秒答（2–4 秒）、15% 慢答對（一半 6 秒、一半 10 秒）、15% 選錯；
+  // 錯過之後的重答 50% 秒答、40% 慢答對、10% 錯。時間：選對＋0.8 秒自動下一張＋0.5 秒反應；選錯＋4 秒看翻面、按下一張
+  const playJh = (J, t) => {
+    for (let k = 0; k < 3000; k++) {
+      const p = pick(J, t);
+      if (!p) break;
+      if (p.e.k === "boost") { finishOther(J, p, t); t += COST.boost * 1000; continue; }
+      if (p.e.k === "recall") { const ok = r4() < 0.75, ms = ok ? 12000 : 15000; answerRecall(J, p, ok, ms, t); t += ms + 4000; continue; }
+      const x = r4(), again = J.graded[p.e.id] !== undefined, [pf, ps] = again ? [0.5, 0.9] : [0.7, 0.85];
+      const ok = x < ps, ms = x < pf ? 2000 + r4() * 2000 : ok ? (r4() < 0.5 ? 6000 : 10000) : 5000;
+      answerRecall(J, p, ok, ms, t);
+      t += ms + (ok ? 1300 : 4000);
+    }
+    return t;
+  };
+  for (let di = 0; di < N; di++) {
+    const day = addDays(START, di);
+    let t = T(day); clock.t = t;
+    const D = today(t);
+    const okMain = (e) => D.graded[e.id] !== undefined ? 0.75 : e.tag === "fc" ? 0.7 : 0.85;
+    t = playAll(D, t, okMain, r3, msMain);
+    const J = todayJh(t), j0 = t;
+    if (J) t = playJh(J, t);
+    const jMin = (t - j0) / MIN;
+    const banks = new Set(LEARNED.concat(SCHEDULE.filter((x) => x.date <= day).map((x) => x.bank)));
+    const F = buildFree(banks, 10, t, false);
+    playAll(F, t, () => 0.8, r3, msMain);
+    const logN = S.log.filter((e) => dayOf(e.t) === day).length;
+    per.push({ day, cls: isClassDay(D, day), J: !!J, n: J ? J.set.length : 0, fc: J ? J.fc : 0, est: J ? J.est : 0, min: jMin, jAns: J ? J.ans : 0,
+      mainPass: D.passed, jPass: J ? J.passed : null, mainAns: D.ans, logN });
+    if (doneDay == null && JH_LIST.every((i) => seen(i.id))) doneDay = di + 1;
+  }
+  clock.t = null;
+  const work = per.filter((x) => x.J), d30 = per.slice(0, 30), w30 = d30.filter((x) => x.J);
+  const avgMin = w30.reduce((a, x) => a + x.min, 0) / w30.length, maxMin = Math.max(...w30.map((x) => x.min));
+  check("國中字模擬：統測每天都過關（國中字不影響）、國中字每天都做得完", per.every((x) => x.mainPass) && work.every((x) => x.jPass || !x.n));
+  check("國中字模擬：上課日沒有國中字、其他天都有", per.every((x) => x.cls ? !x.J : x.J), `上課日 ${per.filter((x) => x.cls).map((x) => x.day.slice(5)).join(" ")}`);
+  check(`國中字模擬：首次檢測每天 ≤ ${JH_FIRST_CHECK_PER_DAY}、估計 ≤ ${JH_BUDGET_SEC / 60} 分鐘`, per.every((x) => x.fc <= JH_FIRST_CHECK_PER_DAY && x.est <= JH_BUDGET_SEC));
+  // 目標（太一 2026-10-08）：每天約 5 分鐘、第一輪 1～2 個月；模擬有隨機起伏，門檻放 5.5 分、70 天
+  check("國中字模擬：前 30 天國中字平均每天約 5 分鐘（≤ 5.5，模擬實際時間）、第一輪檢測約 2 個月內（≤ 70 天）完成", avgMin <= 5.5 && doneDay && doneDay <= 70,
+    `平均 ${avgMin.toFixed(1)} 分、最多 ${maxMin.toFixed(1)} 分；字表 ${JH_LIST.length} 字第一輪檢測完成：${doneDay ? "第 " + doneDay + " 天" : N + " 天內沒完成"}`);
+  const logs = per.map((x) => x.logN), avgLog = logs.slice(0, 30).reduce((a, b) => a + b, 0) / Math.min(30, logs.length);
+  let win = 0;
+  for (let i = 0; i < logs.length; i++) win = Math.max(win, logs.slice(Math.max(0, i - FORGOT_DAYS + 1), i + 1).reduce((a, b) => a + b, 0));
+  check(`作答紀錄：「常忘」要看的 ${FORGOT_DAYS} 天作答量 ≤ 上限 ${LOG_CAP} 筆（統測＋國中字＋重排＋每天總複習 10 張）`, win <= LOG_CAP,
+    `每天平均 ${avgLog.toFixed(0)} 筆、最多 ${Math.max(...logs)} 筆；任 ${FORGOT_DAYS} 天最多 ${win} 筆；${LOG_CAP} 筆約可存 ${Math.floor(LOG_CAP / avgLog)} 天`);
+  return per.map((x) => `${x.day} ${x.cls ? "上課日（無國中字）" : `國中字 ${x.n}題 首檢${x.fc} 估${Math.round(x.est / 60 * 10) / 10}分 實${x.min.toFixed(1)}分 答${x.jAns}${x.jPass ? "" : " 未完"}`}｜統測答${x.mainAns}${x.mainPass ? "" : " 未過"}｜紀錄 ${x.logN} 筆`);
 }
 
 /* ---------- 老師端單元明細 selftest（假進度；截圖也用這份） ---------- */
@@ -1717,6 +2170,58 @@ async function syncSelftest(check, T) {
   evil.cards['<img src=x onerror=alert(1)>'] = C(1, 9, 1);
   evil.days["2026-10-09"].fails["<script>alert(1)<\/script>"] = 99;
   check("老師儀表板：學生端寫進來的怪字串不會變成 HTML", !/<img src=x|<script>/i.test(dashHtml(evil, tt)));
+
+  // --- 國中基本字：一台做統測、另一台做國中字（同一天）→ 兩邊進度都要留住 ---
+  const playJh = (dv, day, n, hm) => {
+    S = dv.S;
+    let t = T(day, hm); clock.t = t;
+    const J = todayJh(t);
+    for (let k = 0; J && k < n; k++) {
+      const p = pick(J, t);
+      if (!p) break;
+      if (p.e.k === "boost") finishOther(J, p, t); else answerRecall(J, p, r2() < 0.85, 5000, t);
+      t += 7000; clock.t = t;
+    }
+    dv.S = S;
+  };
+  const TK4 = "44444444444444444444444444444444", s4 = () => srv.rows[TK4].state;
+  srv.add(TK4, "國中同步");
+  const jA = mkDev(), jB = mkDev();
+  jA.sync.setToken(TK4); await jA.sync.pull();
+  jB.sync.setToken(TK4); await jB.sync.pull();
+  const J1 = "2026-11-20", J2 = "2026-11-21", J3 = "2026-11-22";
+  // (1) A 先做統測並上傳；B 再做國中字並上傳（被擋 → 合併 → 重送）
+  playDev(jA, J1, 30, 0.8, "19:00"); await jA.sync.push();
+  playJh(jB, J1, 20, "20:00"); await jB.sync.push();
+  await jA.sync.pull();
+  const aAns = jA.S.days[J1].ans, bJh = jB.S.days[J1].jh.ans;
+  check("同步／國中字：A 做統測、B 做國中字（A 先傳）→ 雲端與兩台都有兩邊的進度",
+    aAns > 0 && bJh === 20 && s4().days[J1].ans === aAns && s4().days[J1].jh && s4().days[J1].jh.ans === 20 &&
+    jA.S.days[J1].jh && jA.S.days[J1].jh.ans === 20 && jB.S.days[J1].ans === aAns && same(jA.S, s4()) && same(jB.S, s4()),
+    `雲端：統測作答 ${s4().days[J1].ans}、國中字作答 ${s4().days[J1].jh && s4().days[J1].jh.ans}`);
+  // (2) 反過來：B 先做國中字並上傳；A（這天沒有國中字清單）再做統測並上傳
+  playJh(jB, J2, 15, "18:00"); await jB.sync.push();
+  playDev(jA, J2, 25, 0.8, "19:00");
+  const aHadJh = !!jA.S.days[J2].jh;
+  await jA.sync.push(); await jB.sync.pull();
+  check("同步／國中字：B 先傳國中字、A 後傳統測 → 國中字進度沒被 A 那天蓋掉",
+    !aHadJh && s4().days[J2].ans === 25 && s4().days[J2].jh && s4().days[J2].jh.ans === 15 && same(jA.S, s4()) && same(jB.S, s4()),
+    `雲端：統測作答 ${s4().days[J2].ans}、國中字作答 ${s4().days[J2].jh && s4().days[J2].jh.ans}`);
+  // (3) A 統測作答中（整天留這台）時收到 B 的國中字 → A 上傳不能把雲端的國中字拿掉；A 的隊伍物件不被換掉
+  playDev(jA, J3, 5, 0.8, "19:00");
+  jA.keep = J3;
+  const refJ3 = jA.S.days[J3];
+  playJh(jB, J3, 10, "19:10"); await jB.sync.push();
+  await jA.sync.pull();
+  const keptRef = jA.S.days[J3] === refJ3;
+  playDev(jA, J3, 3, 0.8, "19:20"); await jA.sync.push();
+  jA.keep = null;
+  await jA.sync.pull(); await jB.sync.pull();
+  check("同步／國中字：統測作答中合併 → 隊伍物件不換、上傳後雲端仍有另一台的國中字、作答結束後兩台一致",
+    keptRef && s4().days[J3].ans === 8 && s4().days[J3].jh && s4().days[J3].jh.ans === 10 && jA.S.days[J3].jh && jA.S.days[J3].jh.ans === 10 &&
+    same(jA.S, s4()) && same(jB.S, s4()), `雲端：統測作答 ${s4().days[J3].ans}、國中字作答 ${s4().days[J3].jh && s4().days[J3].jh.ans}`);
+  const jhCards = Object.keys(s4().cards).filter(isJh).length;
+  check("同步／國中字：jh: 開頭的卡上得了雲端、沒有待上傳", jhCards > 0 && !Object.keys(diffState(jA.S, jA.sync.snapshot())).length, `雲端國中字卡 ${jhCards} 張`);
   clock.t = null;
 }
 
