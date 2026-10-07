@@ -1130,7 +1130,7 @@ function dashHtml(st, t) {
   h += `<div class="card"><div class="lbl">各單元目前記憶率（FSRS 估計）・點一列看每個字</div>${rows.length ? `<table class="t"><tr><th>單元</th><th class="n">練過</th><th>平均記憶率</th><th class="n">弱字</th><th></th></tr>
     ${rows.map((r) => `<tr class="tap" data-unit="${esc(r.bk)}"><td>${esc(bankName(r.bk))}</td><td class="n">${r.seen}/${r.n}</td><td>${pct(r.avg)}<div class="bar"><div style="width:${Math.round(r.avg * 100)}%"></div></div></td>
       <td class="n${r.weak ? " rr" : ""}">${r.weak}</td><td class="n go">›</td></tr>`).join("")}</table>
-    <div class="small mut mt">弱字＝記憶率 &lt; 70% 或忘記 ≥ 2 次</div>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
+    <div class="small mut mt">弱字＝記憶率 &lt; 70%（複習答對就會回升、自然離開）</div>` : '<div class="mut small">還沒有練習紀錄</div>'}</div>`;
   // 積欠
   const tmr = dayStart(addDays(day, 1));
   const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
@@ -1141,7 +1141,20 @@ function dashHtml(st, t) {
 }
 
 // 單元明細（純函式；selftest 會測）：該半回每個字的記憶率、下次複習、作答紀錄，最弱的排最前面、沒練過的排最後
-const isWeak = (c, r) => !!c && (r < 0.7 || (+c.lapses || 0) >= 2);
+const isWeak = (c, r) => !!c && r < 0.7;   // 太一 2026-10-07：弱字只看「現在記不記得」，跟顏色一致
+// 常忘＝最近 30 天內，有 2 天以上「當天第一次考這個字就拼錯／按不會」；時間窗會往前移，連續一陣子都記得就自然消失
+const FORGOT_DAYS = 30, FORGOT_MIN = 2;
+function forgotCounts(log, t) {
+  const first = {};
+  log.forEach((e) => {
+    if (!fin(e.t) || !ITEMS[e.id] || e.t > t || e.t <= t - FORGOT_DAYS * DAY) return;
+    const k = e.id + "|" + dayOf(e.t);
+    if (!first[k] || e.t < first[k].t) first[k] = e;
+  });
+  const n = {};
+  Object.values(first).forEach((e) => { if (e.g === 1) n[e.id] = (n[e.id] || 0) + 1; });
+  return n;
+}
 const GRADE_TXT = { 1: "重來", 2: "困難", 3: "良好" };
 const pad2 = (n) => String(n).padStart(2, "0");
 const mmdd = (d) => d.slice(5, 7) + "/" + d.slice(8, 10);
@@ -1160,10 +1173,11 @@ function unitHtml(st, t, bk) {
   }).sort((a, b) => (a.r == null) - (b.r == null) || (a.r - b.r) || ((b.c ? +b.c.lapses || 0 : 0) - (a.c ? +a.c.lapses || 0 : 0)));
   const seenRows = rows.filter((x) => x.c);
   const avg = seenRows.length ? seenRows.reduce((s, x) => s + x.r, 0) / seenRows.length : null;
-  const nWeak = rows.filter((x) => isWeak(x.c, x.r)).length;
+  const nWeak = rows.filter((x) => isWeak(x.c, x.r)).length, fc = forgotCounts(st.log, t);
   let h = `<div class="card"><div class="big">${esc(bankName(bk))}</div>
     <div class="small mut">平均記憶率 ${avg == null ? "—" : Math.round(avg * 100) + "%"}・練過 ${seenRows.length}/${its.length}・弱字 ${nWeak}</div>
-    <div class="small mut">點一個字看完整作答紀錄。綠 ≥ 90%、黃 70–90%、紅 &lt; 70%</div></div><div class="card">`;
+    <div class="small mut">點一個字看完整作答紀錄。綠 ≥ 90%、黃 70–90%、紅 &lt; 70%（紅＝弱字）</div>
+    <div class="small mut">「常忘」＝最近 ${FORGOT_DAYS} 天有 ${FORGOT_MIN} 天以上第一次就拼不出來；之後一直記得，最晚 ${FORGOT_DAYS} 天自動拿掉</div></div><div class="card">`;
   rows.forEach((x, i) => {
     const { it, c, r } = x;
     let rTxt = "未練", rCls = "rn", due = "", hist;
@@ -1177,7 +1191,7 @@ function unitHtml(st, t, bk) {
     } else hist = `<div><b>還沒練過這個字</b></div>`;
     hist += x.log.length ? x.log.slice().reverse().map((e) => `<div>${esc(tpeTime(e.t))}　${chipHtml(e)}${e.m === "f" ? ' <span class="small mut">自由練習</span>' : ""}</div>`).join("")
       : `<div class="mut">沒有作答紀錄</div>`;
-    h += `<div class="wd" data-w="${i}"><div class="top"><b>${esc(it.en)}</b><span class="small mut">${esc(it.zh)}</span><span class="r ${rCls}">${rTxt}</span></div>
+    h += `<div class="wd" data-w="${i}"><div class="top"><b>${esc(it.en)}</b><span class="small mut">${esc(it.zh)}</span>${fc[it.id] >= FORGOT_MIN ? `<span class="tag red often">常忘 ${fc[it.id]} 次</span>` : ""}<span class="r ${rCls}">${rTxt}</span></div>
       ${c ? `<div class="small mut">下次複習 ${due}・練過 ${+c.reps || 0} 次・忘記 ${+c.lapses || 0} 次</div>` : ""}
       ${x.log.length ? `<div class="chips">${x.log.slice(-5).map(chipHtml).join("")}</div>` : ""}
       <div class="wh" hidden>${hist}</div></div>`;
@@ -1403,11 +1417,14 @@ function drillFixture(t) {
   card(0, 30, 1, 5, 0, addDays(day, 20));    // 綠
   card(1, 5, 10, 4, 1, addDays(day, 3));     // 黃
   card(2, 1, 10, 7, 3, addDays(day, -4));    // 紅、已到期 4 天
-  card(3, 40, 2, 6, 2, day);                 // 綠但忘記 2 次（弱字）、今天到期
+  card(3, 40, 2, 6, 2, day);                 // 綠、忘記 2 次但都超過 30 天前 → 不是弱字、沒有常忘、今天到期
   card(4, 3, 4, 2, 0, addDays(day, 1));      // 黃
   const gs = [1, 3, 2, 1, 1, 3, 2];
   gs.forEach((g, k) => st.log.push({ t: t - (10 - k) * DAY - 60 * MIN, id: its[2].id, g, ms: 8000 + k * 3000, m: k === 5 ? "f" : "d" }));
   st.log.push({ t: t - 1 * DAY, id: its[0].id, g: 3, ms: 6200, m: "d" });
+  st.log.push({ t: t - 40 * DAY, id: its[3].id, g: 1, ms: 9000, m: "d" }, { t: t - 35 * DAY, id: its[3].id, g: 1, ms: 9000, m: "d" });   // 太久以前
+  st.log.push({ t: t - 2 * DAY, id: its[4].id, g: 3, ms: 5000, m: "d" }, { t: t - 2 * DAY + 5 * MIN, id: its[4].id, g: 1, ms: 9000, m: "d" },
+    { t: t - 3 * DAY, id: its[4].id, g: 1, ms: 9000, m: "d" }, { t: t - 3 * DAY + 5 * MIN, id: its[4].id, g: 1, ms: 9000, m: "d" });   // 只有 1 天是第一次就錯
   st.log.sort((a, b) => a.t - b.t);
   return { st, its };
 }
@@ -1439,7 +1456,13 @@ function drillSelftest(check, T) {
   check("再點一次收起來", wh.hidden);
   const d = dashHtml(st, t);
   check("儀表板單元列：可點、顯示弱字數、沒有 undefined / NaN",
-    /data-unit="u1_upper"/.test(d) && /<td class="n rr">2<\/td>/.test(d) && !/undefined|NaN/.test(d + box.innerHTML));
+    /data-unit="u1_upper"/.test(d) && /<td class="n rr">1<\/td>/.test(d) && !/undefined|NaN/.test(d + box.innerHTML));
+  const often = (i) => (rOf(i).querySelector(".often") || {}).textContent || "";
+  check("常忘標籤：30 天內 2 天以上第一次就錯才標；太久以前的不算；同一天錯多次只算一天；第一次對、之後錯不算",
+    often(2) === "常忘 3 次" && often(3) === "" && often(4) === "" && often(0) === "",
+    [2, 3, 4, 0].map((i) => its[i].en + ":" + (often(i) || "-")).join(" "));
+  const later = T("2026-11-20", "21:00");
+  check("常忘標籤：一直沒再忘，30 天後自動消失", !/class="tag red often"/.test(unitHtml(st, later, "u1_upper")));   // 說明文字本來就有「常忘」兩字，要看標籤本身
   // 怪字串：題庫字被改成 HTML、作答紀錄的欄位亂填、不在題庫的字
   const it5 = ITEMS[its[5].id], keep = [it5.en, it5.zh];
   it5.en = '<img src=x onerror=alert(1)>'; it5.zh = "<script>alert(1)<\/script>";
