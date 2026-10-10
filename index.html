@@ -101,6 +101,10 @@
   .cal div b{display:block; font-size:13px;}
   .cal .ok{background:#E5F6EC; color:#1e7d46;} .cal .part{background:#FFF4D6; color:#9A6B00;}
   .cal .td{outline:2px solid var(--navy);} .cal .jm{display:block; color:var(--blue);}
+  .cal div[data-day]{cursor:pointer;} .cal div[data-day]:active{filter:brightness(.92);}
+  table.dt .grade{font-size:11px; padding:2px 6px; border-radius:6px; white-space:nowrap;} table.dt td{overflow-wrap:anywhere;}
+  .more summary{color:var(--blue); font-size:13px; font-weight:700; padding:10px 2px 4px; cursor:pointer;}
+  .kv div{font-size:14px; padding:3px 0;} .fr{padding:8px 2px; border-bottom:1px solid #EEF2F7; overflow-wrap:anywhere;}
   table.t{width:100%; border-collapse:collapse; font-size:13px;}
   table.t th{font-size:11px; color:var(--mut); font-weight:600; text-align:left; padding:4px 3px; border-bottom:1px solid #E3EAF3;}
   table.t td{padding:6px 3px; border-bottom:1px solid #EEF2F7; vertical-align:top;}
@@ -1216,19 +1220,23 @@ async function teacherStudent(id, name, flash) {
   main.innerHTML = (flash || "") + dashHtml(st, now()) +
     `<div class="row2"><button class="btn ghost" id="rf">重新整理</button><button class="btn ghost" id="rl">重新產生連結</button></div>`;
   bindCopy();
-  main.querySelectorAll("tr[data-unit]").forEach((tr) => tr.onclick = () => {
-    // 單元明細：把儀表板整個收起來（不重抓雲端），返回時原樣放回、捲回原位
-    const saved = [...main.childNodes], bk = tr.dataset.unit, y = window.scrollY, jh = bk === "jh";
-    if (!jh && !BANK_ITEMS[bk]) return;
+  // 明細（單元／某一天）：把儀表板整個收起來（不重抓雲端），返回時原樣放回、捲回原位
+  const open = (title, html) => {
+    const saved = [...main.childNodes], y = window.scrollY;
     const back = () => { main.replaceChildren(...saved); setHeader(name, sub, true); $("back").onclick = () => teacherHome(); window.scrollTo(0, y); };
-    setHeader(name, (jh ? "國中基本字" : bankName(bk)) + " 每個字的記憶狀況", true);
+    setHeader(name, title, true);
     $("back").onclick = back;
-    main.innerHTML = `<button class="btn ghost" id="ub">← 回儀表板</button><div class="mt"></div>` + (jh ? jhHtml(st, now()) : unitHtml(st, now(), bk)) +
-      `<button class="btn ghost" id="ub2">← 回儀表板</button>`;
+    main.innerHTML = `<button class="btn ghost" id="ub">← 回儀表板</button><div class="mt"></div>` + html + `<button class="btn ghost" id="ub2">← 回儀表板</button>`;
     bindUnit(main);
     $("ub").onclick = $("ub2").onclick = back;
     window.scrollTo(0, 0);
+  };
+  main.querySelectorAll("tr[data-unit]").forEach((tr) => tr.onclick = () => {
+    const bk = tr.dataset.unit, jh = bk === "jh";
+    if (!jh && !BANK_ITEMS[bk]) return;
+    open((jh ? "國中基本字" : bankName(bk)) + " 每個字的記憶狀況", jh ? jhHtml(st, now()) : unitHtml(st, now(), bk));
   });
+  main.querySelectorAll(".cal [data-day]").forEach((c) => c.onclick = () => open(fmtDay(c.dataset.day) + " 這天做了什麼", dayHtml(st, c.dataset.day)));
   $("rf").onclick = () => teacherStudent(id, name);
   $("rl").onclick = async () => {
     if (!confirm(`重新產生「${name}」的連結？\n舊連結會立刻失效，學生要用新連結重新打開一次（進度不會不見）。`)) return;
@@ -1263,9 +1271,9 @@ function dashHtml(st, t) {
     if (D && D.passed) nPass++;
     const jm = D && D.jh && D.jh.ans ? Math.max(1, mins(D.jh.ms)) : 0;
     nMin += D ? mins(D.ms) : 0; nJm += jm;
-    cells.push(`<div class="${cls}${i === 0 ? " td" : ""}">${+d.slice(5, 7)}/${+d.slice(8)}<b>${D && D.passed ? "過" : D && D.ans ? "未完" : "—"}</b>${D && D.ans ? mins(D.ms) + "分" : ""}${jm ? `<span class="jm">國${jm}分</span>` : ""}</div>`);
+    cells.push(`<div class="${cls}${i === 0 ? " td" : ""}" data-day="${d}">${+d.slice(5, 7)}/${+d.slice(8)}<b>${D && D.passed ? "過" : D && D.ans ? "未完" : "—"}</b>${D && D.ans ? mins(D.ms) + "分" : ""}${jm ? `<span class="jm">國${jm}分</span>` : ""}</div>`);
   }
-  h += `<div class="card"><div class="lbl">近 14 天</div><div class="cal">${cells.join("")}</div>
+  h += `<div class="card"><div class="lbl">近 14 天・點日期看那天做了什麼</div><div class="cal">${cells.join("")}</div>
     <div class="small mut mt">過關 ${nPass} 天・統測共約 ${nMin} 分鐘${nJm ? `・國中字另約 ${nJm} 分鐘（藍字）` : ""}（綠＝統測過關、黃＝有做沒做完）</div></div>`;
   // 本批
   const b = curBatch(day) || SCHEDULE.find((x) => x.date > day);
@@ -1401,6 +1409,69 @@ function jhHtml(st, t) {
     const g = groups[L], gs = g.filter((x) => x.c).length;
     h += `<div class="card"><div class="lbl">${esc(L)}　已檢測 ${gs}/${g.length}・弱字 ${g.filter((x) => isWeak(x.c, x.r)).length}</div>${g.map((x) => wordRowHtml(x, i++, fc, day, t)).join("")}</div>`;
   });
+  return h;
+}
+// 某一天的明細（純函式；selftest 會測）：點近 14 天的日期進來。評分、秒數、時間都從作答紀錄（log）算，日界＝凌晨 4 點
+function dayHtml(st, d) {
+  const D = st.days[d], J = D && D.jh, t0 = dayStart(d), t1 = dayStart(addDays(d, 1));
+  const mins = (ms) => Math.round((+ms || 0) / MIN);
+  const logs = st.log.filter((e) => e.t >= t0 && e.t < t1).sort((a, b) => a.t - b.t);
+  const first = {}, earlier = new Set();
+  logs.forEach((e) => { if (e.m !== "f" && !first[e.id]) first[e.id] = e; });
+  st.log.forEach((e) => { if (e.t < t0) earlier.add(e.id); });
+  // 紀錄有上限（LOG_CAP）：滿了而且最舊的一筆晚於這天開始 → 這天前段（或整天）的細節已被清掉
+  const trimmed = st.log.length >= LOG_CAP && st.log[0].t > t0;
+  const knowBefore = st.log.length < LOG_CAP || st.log[0].t < t0;   // 看得到這天以前的紀錄 → 才判斷得出「首次檢測」
+  const cls = !!D && isClassDay(D, d, st), b = curBatch(d);
+  const tagOf = (id, Q) => {
+    const q = Q.queue.find((e) => e.id === id && TAGS[e.tag]);
+    if (q) return q.tag;
+    const it = ITEMS[id];
+    if (it && st.intro[id] && dayOf(st.intro[id]) === d) return "new";
+    if (it && Q.mock && it.bank === Q.mock) return "mock";
+    if (it && b && it.bank === b.bank) return "batch";
+    return Q.fc > 0 && knowBefore && !earlier.has(id) ? "fc" : "rev";
+  };
+  // 每個字：第一次評分、錯幾次、最後過了沒；排序＝有錯的（錯越多越前）→ 困難 → 沒作答 → 良好 → 秒答
+  const rowsOf = (Q) => Q.set.map((id) => {
+    const e = first[id] || (Q.graded[id] !== undefined ? { g: Q.graded[id] } : null), g = e && GRADE_TXT[e.g] ? +e.g : 0, fails = +Q.fails[id] || 0;
+    return { id, it: itemOf(id), e, fails, ok: !Q.queue.some((x) => x.id === id), tag: tagOf(id, Q), rank: fails || g === 1 ? 0 : g === 2 ? 1 : !g ? 2 : g === 3 ? 3 : 4 };
+  }).sort((x, y) => x.rank - y.rank || y.fails - x.fails);
+  const wordTd = (id, it, extra) => `<b>${esc(it ? it.en : id)}</b> <span class="small mut">${esc(it ? it.zh : "")}</span>${extra || ""}`;
+  const srcTag = (it) => it && it.bank ? `<span class="tag">${esc(bankName(it.bank))}</span>` : it ? '<span class="tag">國中</span>' : "";
+  const table = (rows) => `<table class="t dt"><tr><th>字</th><th>第一次</th><th class="n">錯</th><th>結果</th></tr>${rows.map((x) =>
+    `<tr><td>${wordTd(x.id, x.it, `<div class="small">${srcTag(x.it)}${TAGS[x.tag]}</div>`)}</td><td>${x.e ? chipHtml(x.e) : '<span class="grade g0">沒作答</span>'}</td>
+      <td class="n${x.fails ? " rr" : ""}">${x.fails}</td><td><span class="tag ${x.ok ? "green" : "red"}">${x.ok ? "過" : "沒過"}</span></td></tr>`).join("")}</table>`;
+  const listHtml = (rows, fold, foldTxt) => {
+    const show = rows.filter((x) => x.rank < fold), rest = rows.filter((x) => x.rank >= fold);
+    return (show.length ? table(show) : "") + (rest.length ? `<details class="more"><summary>${show.length ? "其餘 " : ""}${rest.length} 個${foldTxt}</summary>${table(rest)}</details>` : "");
+  };
+  // 摘要
+  const tStat = !D || !D.ans ? ["沒做", "mut"] : D.passed ? ["過關", "rg"] : ["沒過關", "rr"];
+  const jStat = !J ? (cls ? "休息（上課日）" : "沒排") : !J.set.length ? "沒有要複習的字" : J.passed ? "完成" : `沒完成（${passedCount(J)}/${J.set.length}）`;
+  const boosts = D ? Object.values(D.boosts).reduce((a, c) => a + (+c || 0), 0) : 0;
+  let h = `<div class="card"><div class="big">${esc(d.slice(0, 4))}/${esc(fmtDay(d))}${cls ? ' <span class="tag green">上課日</span>' : ""}</div><div class="kv mt">
+    <div>統測：<b class="${tStat[1]}">${tStat[0]}</b>${D && D.ans && !D.passed ? `（過了 ${passedCount(D)}/${D.set.length}）` : ""}</div>`;
+  if (D) h += `<div>練了約 ${mins(D.ms)} 分鐘・這天清單 ${D.set.length} 個字</div>
+    <div>作答 ${+D.ans || 0} 次${+D.extra ? `（另外自由練習 ${+D.extra} 次）` : ""}・加強卡 ${boosts} 次</div>`;
+  if (D && D.mock) {
+    const n = (BANK_ITEMS[D.mock] || []).length || Object.keys(D.mockFirst).length;
+    h += `<div>模擬考（${esc(BANK_ITEMS[D.mock] ? bankName(D.mock) : D.mock)}）第一次就拼對 <b>${Object.values(D.mockFirst).filter(Boolean).length}/${n}</b></div>`;
+  }
+  h += `<div>國中字：<b>${esc(jStat)}</b>${J && J.set.length ? `・約 ${J.ans ? Math.max(1, mins(J.ms)) : 0} 分鐘・${J.set.length} 題` : ""}</div>`;
+  h += logs.length ? `<div>作答時間：${esc(tpeTime(logs[0].t))} ～ ${esc(tpeTime(logs[logs.length - 1].t))}${D && D.passed && fin(D.passedAt) && D.passedAt ? `・統測 ${esc(tpeTime(D.passedAt).slice(6))} 過關` : ""}</div>` : "";
+  h += `</div>${trimmed ? `<div class="small mut mt">作答紀錄只保留最近 ${LOG_CAP} 筆，這天較早的細節（評分、秒數、時間）已被清掉，下面只列還留著的。</div>` : ""}</div>`;
+  if (!D && !logs.length) return h + `<div class="card mut">這天沒有練習紀錄</div>`;
+  // 統測清單
+  if (D && D.set.length) h += `<div class="card"><div class="lbl">統測清單（有錯的在最前面）</div>${listHtml(rowsOf(D), 3, "第一次就良好")}</div>`;
+  // 自由練習
+  const fr = logs.filter((e) => e.m === "f"), grp = new Map();
+  fr.forEach((e) => { if (!grp.has(e.id)) grp.set(e.id, []); grp.get(e.id).push(e); });
+  h += `<div class="card"><div class="lbl">自由練習（總複習／再多練）</div>${fr.length ? `<div class="small mut">${fr.length} 次・${grp.size} 個字（不影響當天過關）</div>` +
+    [...grp].map(([id, es]) => `<div class="fr">${wordTd(id, itemOf(id), " " + srcTag(itemOf(id)))}<div class="chips">${es.map(chipHtml).join("")}</div></div>`).join("")
+    : '<div class="small mut">這天沒有自由練習</div>'}</div>`;
+  // 國中字清單
+  if (J && J.set.length) h += `<div class="card"><div class="lbl">國中字清單（有錯的在最前面）</div>${listHtml(rowsOf(J), 4, "秒答（4 秒內選對）")}</div>`;
   return h;
 }
 function bindUnit(root) {
@@ -1608,6 +1679,7 @@ async function runSelftest() {
   check("(e) 長期排程每字每天只評一次", !multiGrade);
   await syncSelftest(check, T);
   drillSelftest(check, T);
+  daySelftest(check, T);
   await jhSelftest(check, T);
   const sim = jhSim(check, T);
   if (!realJh) indexJh(DATA.jh && DATA.jh.items);
@@ -1965,6 +2037,84 @@ function drillSelftest(check, T) {
   const evil = unitHtml(st, t, "u1_upper") + dashHtml(st, t);
   it5.en = keep[0]; it5.zh = keep[1];
   check("單元明細：怪字串不會變成 HTML", !/<img src=x|<script>|<svg|<b>x|<i>y|<u>/i.test(evil) && evil.includes("&lt;img src=x"));
+}
+
+/* ---------- 老師端「某一天」明細 selftest：假進度（模擬考日＋上課日＋空白日） ---------- */
+function daySelftest(check, T) {
+  const keepS = S; S = freshState();   // 刻意讓全域 S 是空的：明細只能看傳進去的 st
+  const b = SCHEDULE.find((x) => BANK_ITEMS[x.bank] && x.testDate === addDays(x.date, 4)) || SCHEDULE.find((x) => BANK_ITEMS[x.bank]);
+  const its = BANK_ITEMS[b.bank], CLS = b.date, DA = addDays(b.testDate, -1), EMPTY = addDays(b.date, -3);
+  const rev = BANK_ITEMS.u1_upper[0], fcIt = BANK_ITEMS.u2_upper[0], fr1 = BANK_ITEMS.u3_upper[0], fr2 = BANK_ITEMS.u3_upper[1];
+  const jh = JH_LIST.slice(0, 5), EVIL = "<svg onload=alert(1)>";
+  const st = freshState(), L = (d, hm, id, g, ms, m) => st.log.push({ t: T(d, hm), id, g, ms, m: m || "d" });
+  its.forEach((it) => { st.intro[it.id] = T(CLS, "19:00"); });
+  // 上課日：新字輸入做完、過關、沒有國中字
+  st.days[CLS] = Object.assign(blankDay(), { set: its.map((i) => i.id), ans: 60, ms: 25 * MIN, passed: true });
+  L(addDays(DA, -5), "19:00", rev.id, 3, 5000);
+  // 模擬考日
+  const D = Object.assign(blankDay(), { set: its.map((i) => i.id).concat([rev.id, fcIt.id, EVIL]), mock: b.bank, ans: 40, ms: 22 * MIN, fc: 1, extra: 4,
+    queue: [{ id: its[3].id, k: "recall", tag: "mock" }, { id: EVIL, k: "recall", tag: "rev" }], boosts: { [its[0].id]: 1 } });
+  st.days[DA] = D;
+  L(DA, "19:00", its[0].id, 1, 9000); L(DA, "19:01", its[1].id, 1, 7000); L(DA, "19:02", its[2].id, 2, 25000);
+  its.slice(4).forEach((it, k) => L(DA, "19:" + pad2(3 + k), it.id, 3, 6000));
+  L(DA, "19:20", rev.id, 3, 4000); L(DA, "19:21", fcIt.id, 3, 5000);
+  L(DA, "19:22", its[0].id, 1, 9000); L(DA, "19:23", its[0].id, 1, 9000); L(DA, "19:24", its[1].id, 3, 9000); L(DA, "19:25", its[0].id, 3, 9000);
+  its.forEach((it, k) => { if (k !== 3) D.mockFirst[it.id] = k > 1; });
+  Object.assign(D.graded, ...Object.keys(D.mockFirst).map((id) => ({ [id]: D.mockFirst[id] ? 3 : 1 })), { [its[2].id]: 2, [rev.id]: 3, [fcIt.id]: 3 });
+  Object.assign(D.fails, { [its[0].id]: 3, [its[1].id]: 1 });
+  L(DA, "21:00", fr1.id, 1, 12000, "f"); L(DA, "21:01", fr2.id, 3, 5000, "f"); L(DA, "21:05", fr1.id, 3, 8000, "f"); L(DA, "21:06", jh[0].id, 4, 2000, "f");
+  st.log.push({ t: T(DA, "21:30"), id: EVIL, g: "<b>x</b>", ms: "<i>y</i>", m: "f" });
+  // 國中字：2 個秒答要收起來
+  D.jh = { set: jh.map((i) => i.id), queue: [], ans: 9, graded: {}, fails: { [jh[1].id]: 2 }, boosts: {}, passed: true, ms: 3 * MIN, fc: 0 };
+  [[1, 1], [2, 2], [3, 3], [4, 4], [0, 4]].forEach(([i, g], k) => { L(DA, "20:" + pad2(k), jh[i].id, g, g === 4 ? 2500 : 6000); D.jh.graded[jh[i].id] = g; });
+  st.log.sort((x, y) => x.t - y.t);
+
+  const box = document.createElement("div");
+  box.innerHTML = dayHtml(st, DA);
+  const cards = [...box.querySelectorAll(".card")], tCard = cards.find((c) => /統測清單/.test(c.textContent)), jCard = cards.find((c) => /國中字清單/.test(c.textContent));
+  const firstRows = (c) => [...c.querySelector(":scope > table").querySelectorAll("tr")].slice(1).map((r) => r.querySelector("b").textContent);
+  const tRows = firstRows(tCard), sum = cards[0].textContent;
+  check("某一天明細：統測清單有錯的先（錯多的在前）→ 困難 → 沒作答；第一次就良好的收成一行",
+    tRows.join("|") === [its[0].en, its[1].en, its[2].en, its[3].en, EVIL].join("|") || tRows.join("|") === [its[0].en, its[1].en, its[2].en, EVIL, its[3].en].join("|"),
+    tRows.join(", "));
+  const sumT = tCard.querySelector("details summary").textContent, nGood = its.length - 4 + 2;
+  check("某一天明細：收起來的行數對（其餘 N 個第一次就良好）、展開後有表格", sumT === `其餘 ${nGood} 個第一次就良好` && tCard.querySelectorAll("details tr").length === nGood + 1, sumT);
+  const rowOf = (c, en) => [...c.querySelectorAll("tr")].find((r) => (r.querySelector("b") || {}).textContent === en);
+  check("某一天明細：第一次評分（含秒數）、錯幾次、過沒過、字的類別（明天要考／複習／首次檢測）",
+    /重來 9 秒/.test(rowOf(tCard, its[0].en).textContent) && /3/.test(rowOf(tCard, its[0].en).querySelector("td.n").textContent) && /過/.test(rowOf(tCard, its[0].en).textContent) &&
+    /困難 25 秒/.test(rowOf(tCard, its[2].en).textContent) && /沒作答/.test(rowOf(tCard, its[3].en).textContent) && /沒過/.test(rowOf(tCard, its[3].en).textContent) &&
+    /明天要考/.test(rowOf(tCard, its[5].en).textContent) && /複習/.test(rowOf(tCard, rev.en).textContent) && /首次檢測/.test(rowOf(tCard, fcIt.en).textContent),
+    rowOf(tCard, its[0].en).textContent.replace(/\s+/g, " "));
+  check("某一天明細：摘要（模擬考第一次拼對 x/18、作答／自由練習／加強卡次數、分鐘、清單字數）",
+    sum.includes(`第一次就拼對 15/${its.length}`) && /沒過關/.test(sum) && /作答 40 次（另外自由練習 4 次）・加強卡 1 次/.test(sum) && /練了約 22 分鐘・這天清單 21 個字/.test(sum), sum.replace(/\s+/g, " ").slice(0, 160));
+  check("某一天明細：作答時間（台北時間第一筆～最後一筆）",
+    sum.includes(`作答時間：${tpeTime(T(DA, "19:00"))} ～ ${tpeTime(T(DA, "21:30"))}`));
+  const frCard = cards.find((c) => /自由練習（/.test(c.textContent)), frs = [...frCard.querySelectorAll(".fr")];
+  check("某一天明細：自由練習依字分組（照第一次出現的順序）、每個字的作答小標籤",
+    frs.length === 4 && frs[0].querySelector("b").textContent === fr1.en && frs[0].querySelectorAll(".grade").length === 2 &&
+    frs[0].querySelector(".grade").textContent === "重來 12 秒" && /國中/.test(frs[2].textContent) && /秒答 2 秒/.test(frs[2].textContent) && /5 次・4 個字/.test(frCard.textContent),
+    frs.map((f) => f.querySelector("b").textContent).join(", "));
+  const jRows = firstRows(jCard), jSum = jCard.querySelector("details summary").textContent;
+  check("某一天明細：國中字（錯的先、困難、良好；秒答收成一行）＋摘要（完成・分鐘・題數）",
+    jRows.join("|") === [jh[1].en, jh[2].en, jh[3].en].join("|") && jSum === "其餘 2 個秒答（4 秒內選對）" && /國中字：完成・約 3 分鐘・5 題/.test(sum),
+    jRows.join(", ") + "／" + jSum);
+  const cbox = document.createElement("div");
+  cbox.innerHTML = dayHtml(st, CLS);
+  check("某一天明細：上課日看學生自己的進度（標「上課日」、國中字「休息（上課日）」，不看全域 S）",
+    /上課日/.test(cbox.querySelector(".big").textContent) && /國中字：休息（上課日）/.test(cbox.textContent) && /統測：過關/.test(cbox.textContent));
+  const eh = dayHtml(st, EMPTY);
+  check("某一天明細：沒資料的日子 → 「沒做」「這天沒有練習紀錄」", /這天沒有練習紀錄/.test(eh) && /統測：<b class="mut">沒做/.test(eh) && /國中字：<b>沒排/.test(eh));
+  const all = box.innerHTML + cbox.innerHTML + eh;
+  check("某一天明細：怪字串不會變成 HTML、沒有 undefined / NaN",
+    !/<svg onload|<b>x|<i>y/i.test(all) && all.includes("&lt;svg onload") && !/undefined|NaN/.test(all));
+  check("某一天明細：作答紀錄還完整時不顯示「已被清掉」", !/已被清掉/.test(all));
+  const big = JSON.parse(JSON.stringify(st));
+  big.log = Array.from({ length: LOG_CAP }, (_, i) => ({ t: T(DA, "22:00") + i * 1000, id: its[4].id, g: 3, ms: 3000, m: "f" }));
+  const th = dayHtml(big, DA);
+  check("某一天明細：紀錄被 5000 筆上限清掉的舊日子 → 顯示還有的＋小提示、不壞掉", /已被清掉/.test(th) && /統測清單/.test(th) && !/undefined|NaN/.test(th));
+  const dh = dashHtml(st, T(DA, "22:00"));
+  check("儀表板：近 14 天每格可點（data-day）", (dh.match(/data-day="\d{4}-\d{2}-\d{2}"/g) || []).length === 14 && dh.includes(`data-day="${DA}"`));
+  S = keepS;
 }
 
 /* ---------- 雲端同步 selftest：假伺服器（照 supabase/001_srs.sql 的 srs_load / srs_save 規則），完全不連網 ---------- */
