@@ -1286,10 +1286,11 @@ function dashHtml(st, t) {
     const nOk = its.filter((i) => stat(i.id)[0] === "過了").length, nR = its.filter((i) => (Rof(i.id, exam) || 0) >= 0.9).length;
     h += `<div class="big">${esc(bankName(b.bank))}　${esc(fmtDay(b.testDate))} 上課考</div>
       <div class="small mut">今天過了 ${nOk}/${its.length}・考試當天預估記憶率 ≥ 90% 的 ${nR}/${its.length}${mock ? `・模擬考第一次對 ${Object.values(Dt.mockFirst).filter(Boolean).length}/${its.length}` : ""}</div>
-      <table class="t mt"><tr><th>字</th><th>今天</th><th class="n">今天錯</th><th class="n">本批累計錯</th><th class="n">考試日記憶率</th>${mock ? '<th class="n">模擬考</th>' : ""}</tr>
+      <div class="small mut mt">欄位：今天狀態／今天錯／本批累計錯／考試日預估記憶率${mock ? "／模擬考" : ""}</div>
+      <div style="overflow-x:auto"><table class="t"><tr><th>字</th><th>今天</th><th class="n">今錯</th><th class="n">累錯</th><th class="n">考試日</th>${mock ? '<th class="n">模擬</th>' : ""}</tr>
       ${its.map((it) => { const s = stat(it.id); return `<tr><td><b>${esc(it.en)}</b><div class="small mut">${esc(it.zh)}</div></td>
-        <td><span class="tag ${s[1]}">${s[0]}</span></td><td class="n">${Dt ? +Dt.fails[it.id] || 0 : 0}</td><td class="n">${failsOf(it.id, b.date)}</td>
-        <td class="n">${pct(Rof(it.id, exam))}</td>${mock ? `<td class="n">${it.id in Dt.mockFirst ? (Dt.mockFirst[it.id] ? "對" : "錯") : "—"}</td>` : ""}</tr>`; }).join("")}</table>`;
+        <td><span class="tag ${s[1]}" style="white-space:nowrap">${s[0]}</span></td><td class="n">${Dt ? +Dt.fails[it.id] || 0 : 0}</td><td class="n">${failsOf(it.id, b.date)}</td>
+        <td class="n">${pct(Rof(it.id, exam))}</td>${mock ? `<td class="n">${it.id in Dt.mockFirst ? (Dt.mockFirst[it.id] ? "對" : "錯") : "—"}</td>` : ""}</tr>`; }).join("")}</table></div>`;
   }
   h += `</div>`;
   // 弱字前 20
