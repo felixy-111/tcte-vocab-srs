@@ -564,7 +564,9 @@ function buildDay(day) {
   save();
   return D;
 }
-const today = (t) => S.days[dayOf(t)] || buildDay(dayOf(t));
+// 課表改過（2026-10-14 九下改十上）：今天已用舊課表排了別批的新字、還沒作答 → 照新課表重排
+const staleDay = (D, day) => D.ans === 0 && D.queue.some((e) => e.k === "input" && (ITEMS[e.id] || {}).bank !== (curBatch(day) || {}).bank);
+const today = (t) => { const d = dayOf(t), D = S.days[d]; return D && !staleDay(D, d) ? D : buildDay(d); };
 
 /* ============================================================
    國中基本字：另一份每日清單（存在 days[日期].jh），約 5 分鐘，完成與否不影響統測過關
@@ -1582,6 +1584,19 @@ async function runSelftest() {
   check("新字困難 → 重複這一步", Q.queue[0] && Q.queue[0].step === 1 && Q.queue[0].t === t + 20 * MIN);
   answerRecall(Q, pick(Q, t + 20 * MIN), false, 5000, t + 20 * MIN);
   check("新字重來 → 回第一步（1 分）", Q.queue[0] && Q.queue[0].step === 0 && Q.queue[0].t === t + 21 * MIN);
+  // 課表改過：今天用舊課表排了別批的新字、還沒作答 → 重排成現在這批；已作答就不動
+  {
+    const cb = SCHEDULE.find((b) => BANK_ITEMS[b.bank]), other = SCHEDULE.find((b) => b.bank !== cb.bank && BANK_ITEMS[b.bank]);
+    S = freshState(); t = T(cb.date); clock.t = t;
+    const fake = () => ({ set: [], queue: BANK_ITEMS[other.bank].map((it) => ({ id: it.id, k: "input", after: 0, t: 0 })), ans: 0, graded: {}, fails: {}, boosts: {}, mock: null, mockFirst: {}, passed: false, ms: 0, lastAct: 0, est: 0, fc: 0, extra: 0 });
+    S.days[cb.date] = fake();
+    const Dr = today(t), banksIn = new Set(Dr.queue.filter((e) => e.k === "input").map((e) => ITEMS[e.id].bank));
+    S.days[cb.date] = fake(); S.days[cb.date].ans = 1;
+    const Dk = today(t);
+    check("課表改過 → 還沒作答的今天清單照新課表重排；已作答的不動",
+      banksIn.size === 1 && banksIn.has(cb.bank) && Dk === S.days[cb.date] && Dk.queue[0].id === BANK_ITEMS[other.bank][0].id,
+      `${cb.date} 舊排 ${other.bank} → ${[...banksIn]}`);
+  }
   // 過關閘門
   S = freshState();
   t = T("2026-10-04"); clock.t = t;
@@ -1600,7 +1615,7 @@ async function runSelftest() {
   // --- 30 天模擬 ---
   S = freshState();
   const r = rng(12345);
-  const START = "2026-10-03", DAYS = +qs.get("days") || 40;   // 40 天：涵蓋新進度結束（11/7）後積欠消化、首檢收尾
+  const START = "2026-10-03", DAYS = +qs.get("days") || 40;   // 40 天：涵蓋新進度結束（11/4）後積欠消化、首檢收尾
   const learnedIds = LEARNED.flatMap((b) => BANK_ITEMS[b].map((i) => i.id));
   const perDay = [], gapBad = [];
   let fcAllDay = null, stuck = false, gateBad = 0, multiGrade = 0, earlyAlone = 0;
@@ -1991,8 +2006,8 @@ function drillSelftest(check, T) {
     const keep = S; S = freshState();
     const pool = firstCheckPool("2026-10-08", new Set()), firstPlain = pool.find((i) => !i.wrong);
     const wrongN = pool.filter((i) => i.wrong).length;
-    check("舊字首次檢測順序：錯題清單先、其餘從最近教的開始（U8上 → U1上）",
-      pool.slice(0, wrongN).every((i) => i.wrong) && firstPlain && firstPlain.bank === "u8_upper" && pool[pool.length - 1].bank === "u1_upper",
+    check("舊字首次檢測順序：錯題清單先、其餘從最近教的開始（已學最後一批 → U1上）",
+      pool.slice(0, wrongN).every((i) => i.wrong) && firstPlain && firstPlain.bank === LEARNED[LEARNED.length - 1] && pool[pool.length - 1].bank === "u1_upper",
       `錯題 ${wrongN}、接著 ${firstPlain && firstPlain.bank}、最後 ${pool[pool.length - 1].bank}`);
     S = keep;
   }
