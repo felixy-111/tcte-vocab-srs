@@ -495,10 +495,14 @@ function indexData(d) {
 }
 const isJh = (id) => id.startsWith("jh:");
 const itemOf = (id) => ITEMS[id] || JH[id];
-const bankName = (b) => { const m = b.match(/u(\d+)_(upper|lower)/); return `U${m[1]}${m[2] === "upper" ? "上" : "下"}`; };
+const bankName = (b) => { if (DATA && DATA.bankTitles && DATA.bankTitles[b]) return DATA.bankTitles[b]; const m = b.match(/u(\d+)_(upper|lower)/); return `U${m[1]}${m[2] === "upper" ? "上" : "下"}`; };
 const curBatch = (day) => SCHEDULE.find((b) => b.date <= day && day < b.testDate) || null;
 const mockBatch = (day) => SCHEDULE.find((b) => b.testDate === addDays(day, 1) && b.date <= day) || null;
 const seen = (id) => !!S.cards[id];
+// 月考衝刺（太一 2026-10-21）：focus 期間每日只練洩題字（m1–m4），統測舊字與國中字暫停；月考後洩題字退場，不再排複習
+const inFocus = (day) => !!DATA.focus && DATA.focus.from <= day && day <= DATA.focus.to;
+const retired = (bank, day) => !!DATA.focus && DATA.focus.banks.includes(bank) && day > DATA.focus.to;
+const retiredId = (id, day) => !!ITEMS[id] && retired(ITEMS[id].bank, day);
 
 /* ============================================================
    每日任務：當天一開始就固定一份清單（約 20 分鐘），全部拼對才過關
@@ -506,7 +510,7 @@ const seen = (id) => !!S.cards[id];
 function firstCheckPool(day, exclude) {
   const cur = curBatch(day);
   // 最近教的先檢測（太一 2026-10-07）：剛學的記憶最淺；U1–U7 課堂 Anki 也在複習
-  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.testDate <= day).map((b) => b.bank)).reverse();
+  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.testDate <= day && !retired(b.bank, day)).map((b) => b.bank)).reverse();
   const list = [];
   banks.forEach((b) => (BANK_ITEMS[b] || []).forEach((it) => {
     if (!seen(it.id) && !exclude.has(it.id) && (!cur || cur.bank !== b)) list.push(it);
@@ -543,13 +547,22 @@ function buildDay(day) {
   D.forcedEst = D.est;
   // 上課日（本批第一次輸入新字）只做新字，舊字留到明天（太一 2026-10-03 拍板）
   if (D.queue.some((e) => e.k === "input")) { S.days[day] = D; save(); return D; }
+  // 月考衝刺：已教過的月考批全部每天拼一次（強制、不受份量上限），其他都不排
+  if (inFocus(day)) {
+    SCHEDULE.filter((x) => DATA.focus.banks.includes(x.bank) && x.date <= day).forEach((x) => BANK_ITEMS[x.bank].forEach((it) => {
+      if (inSet.has(it.id)) return;
+      if (!S.intro[it.id]) { push({ id: it.id, k: "input", after: 0, t: 0 }); push({ id: it.id, k: "recog", after: 0, t: 0 }); addRecall(it.id, "new", STEPS); }
+      else addRecall(it.id, "batch");
+    }));
+    D.forcedEst = D.est; S.days[day] = D; save(); return D;
+  }
   const fits = (id, tag) => D.est + entryCost({ k: "recall", tag }) <= BUDGET_SEC;
   // 2. 昨天沒過關的
-  left.forEach((id) => { if (!inSet.has(id) && fits(id, "rev")) addRecall(id, "rev"); });
+  left.forEach((id) => { if (!inSet.has(id) && !retiredId(id, day) && fits(id, "rev")) addRecall(id, "rev"); });
   // 3. 舊字首次檢測（排在到期複習前：沒檢測過的舊字等於完全沒複習）
   //    但積欠的到期複習超過 BACKLOG_PAUSE 張時，今天暫停首檢、名額讓給複習（避免越積越多）
   const t0 = dayStart(day);
-  const dueIds = Object.keys(S.cards).filter((id) => !isJh(id) && !inSet.has(id) && S.cards[id].due < dayStart(addDays(day, 1)));
+  const dueIds = Object.keys(S.cards).filter((id) => !isJh(id) && !inSet.has(id) && !retiredId(id, day) && S.cards[id].due < dayStart(addDays(day, 1)));
   const overdue = dueIds.filter((id) => S.cards[id].due < t0).length;
   D.fcPaused = overdue > BACKLOG_PAUSE;
   if (!D.fcPaused) for (const it of firstCheckPool(day, inSet)) {
@@ -602,7 +615,7 @@ function todayJh(t) {
   if (!JH_LIST.length) return null;
   const day = dayOf(t), D = today(t);
   if (D.jh) return D.jh;
-  if (isClassDay(D, day)) return null;
+  if (isClassDay(D, day) || inFocus(day)) return null;
   D.jh = buildJh(day, D, t);
   save();
   return D.jh;
@@ -752,7 +765,7 @@ function hlSent(s) {
   return i < 0 ? e : e.slice(0, i) + "<b>" + e.slice(i, i + h.length) + "</b>" + e.slice(i + h.length);
 }
 function distractors(it) {
-  const pool = DATA.items.filter((x) => x.id !== it.id && x.kind === it.kind && x.zh !== it.zh);
+  const pool = DATA.items.filter((x) => x.id !== it.id && x.kind === it.kind && x.zh !== it.zh && !x.monthly === !it.monthly);   // 月考字跟統測字不互當干擾（pick up 兩邊都有、中文相近）
   const p1 = it.pos.split("/")[0];
   const tiers = [
     pool.filter((x) => x.unit === it.unit && x.pos.split("/")[0] === p1),
@@ -823,8 +836,10 @@ function home() {
   const learnedItems = LEARNED.reduce((n, bk) => n + BANK_ITEMS[bk].length, 0);
   const learnedSeen = LEARNED.reduce((n, bk) => n + BANK_ITEMS[bk].filter((i) => seen(i.id)).length, 0);
   let h = `<div class="card"><div class="lbl">本批進度</div>`;
-  if (b) h += `<div class="big">${bankName(b.bank)}　15 字＋3 片語</div><div class="small mut">${fmtDay(b.testDate)} 上課考</div>`;
+  const nW = b ? BANK_ITEMS[b.bank].filter((i) => i.kind === "word").length : 0, nP = b ? BANK_ITEMS[b.bank].length - nW : 0;
+  if (b) h += `<div class="big">${bankName(b.bank)}　${nW} 字${nP ? `＋${nP} 片語` : ""}</div><div class="small mut">${fmtDay(b.testDate)} 上課考</div>`;
   else h += `<div class="big">目前沒有新進度</div><div class="small mut">${next ? fmtDay(next.date) + " 開始 " + bankName(next.bank) : "新單元題庫做好後會自動排進來"}</div>`;
+  if (inFocus(day)) h += `<div class="small mt" style="color:var(--red)">月考衝刺中：到 ${fmtDay(DATA.focus.to)} 每天只練月考單字（教過的全部都要拼），統測舊字和國中字暫停</div>`;
   h += `</div>`;
   if (D.mock) {
     const n = BANK_ITEMS[D.mock].length, tried = Object.keys(D.mockFirst).length, okN = Object.values(D.mockFirst).filter(Boolean).length;
@@ -845,7 +860,7 @@ function home() {
   if (JH_LIST.length) {
     const J = todayJh(t);
     h += `<div class="card" id="jhCard"><div class="lbl">國中基本字</div>`;
-    if (!J) h += `<div class="small mut">今天是上課日，國中字休息</div>`;
+    if (!J) h += `<div class="small mut">${inFocus(day) ? "月考衝刺中，國中字暫停" : "今天是上課日，國中字休息"}</div>`;
     else if (!J.set.length) h += `<div class="small mut">今天沒有國中字要複習</div>`;
     else if (J.passed) h += `<div class="done"><div class="big">國中字完成</div><div class="small mut">${J.set.length} 題・花了約 ${Math.max(1, Math.round(J.ms / MIN))} 分鐘</div></div>`;
     else h += `<button class="btn blue" id="goJh">${J.ans ? "繼續" : "開始"}<span class="s">今天 ${J.set.length} 題・約 ${Math.ceil(remainSec(J) / 60)} 分鐘</span></button>
@@ -858,7 +873,7 @@ function home() {
   if ($("goDaily")) $("goDaily").onclick = () => startSession(today(now()), "daily");
   if ($("goJh")) $("goJh").onclick = () => { const J = todayJh(now()); if (J) startSession(J, "jh"); else home(); };
   if ($("goMore")) $("goMore").onclick = () => {
-    const banks = new Set(LEARNED.concat(SCHEDULE.filter((x) => x.date <= day).map((x) => x.bank)));
+    const banks = new Set(LEARNED.concat(SCHEDULE.filter((x) => x.date <= day && !retired(x.bank, day)).map((x) => x.bank)));
     startSession(buildFree(banks, 10, now()), "free");
   };
   $("goFree").onclick = freePicker;
@@ -1316,7 +1331,7 @@ function dashHtml(st, t) {
     const fcn = forgotCounts(st.log, t), rs = JH_LIST.map((i) => Rof(i.id)).filter((r) => r != null);
     const avg = rs.length ? rs.reduce((a, c) => a + c, 0) / rs.length : null, Jt = Dt && Dt.jh;
     const nWeak = JH_LIST.filter((i) => isWeak(st.cards[i.id], Rof(i.id))).length, nOften = JH_LIST.filter((i) => fcn[i.id] >= FORGOT_MIN).length;
-    const td = !Jt ? (Dt && isClassDay(Dt, day, st) ? "今天上課日，國中字休息" : "今天還沒排國中字") : !Jt.set.length ? "今天沒有國中字要複習"
+    const td = !Jt ? (inFocus(day) ? "月考衝刺中，國中字暫停" : Dt && isClassDay(Dt, day, st) ? "今天上課日，國中字休息" : "今天還沒排國中字") : !Jt.set.length ? "今天沒有國中字要複習"
       : Jt.passed ? `今天國中字完成（${Jt.set.length} 題・約 ${mins(Jt.ms)} 分鐘）` : Jt.ans ? `今天國中字還沒做完（${passedCount(Jt)}/${Jt.set.length}・約 ${mins(Jt.ms)} 分鐘）` : "今天國中字還沒開始";
     h += `<div class="card"><div class="lbl">國中基本字・點一列看每個字</div><table class="t"><tr><th>範圍</th><th class="n">已檢測</th><th>平均記憶率</th><th class="n">弱字</th><th class="n">常忘</th><th></th></tr>
       <tr class="tap" data-unit="jh"><td>國中 1200</td><td class="n">${rs.length}/${JH_LIST.length}</td><td>${pct(avg)}<div class="bar"><div style="width:${Math.round((avg || 0) * 100)}%"></div></div></td>
@@ -1325,8 +1340,8 @@ function dashHtml(st, t) {
   }
   // 積欠
   const tmr = dayStart(addDays(day, 1));
-  const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
-  const fcBanks = LEARNED.concat(SCHEDULE.filter((x) => x.testDate <= day).map((x) => x.bank));
+  const overdue = Object.keys(st.cards).filter((id) => ITEMS[id] && !retiredId(id, day) && st.cards[id].due < tmr && !(Dt && Dt.set.includes(id))).length;
+  const fcBanks = LEARNED.concat(SCHEDULE.filter((x) => x.testDate <= day && !retired(x.bank, day)).map((x) => x.bank));
   const unchecked = fcBanks.reduce((n, bk) => n + (BANK_ITEMS[bk] || []).filter((i) => !st.cards[i.id]).length, 0);
   h += `<div class="card"><div class="lbl">積欠</div><div class="stat"><div><b>${overdue}</b>到期但今天排不下</div><div><b>${unchecked}</b>舊字還沒首次檢測</div></div></div>`;
   return h;
@@ -1612,7 +1627,8 @@ async function runSelftest() {
   }
   check("過關閘門：每張在最後一次拼錯之後都拼對過才顯示完成", !gateEarly && Dg.passed && !Dg.queue.length, `${n0} 張`);
 
-  // --- 30 天模擬 ---
+  // --- 30 天模擬 ---（測排程演算法本身：關掉月考衝刺；月考期間另由 focusSelftest 測）
+  const keepFocus = DATA.focus; DATA.focus = null;
   S = freshState();
   const r = rng(12345);
   const START = "2026-10-03", DAYS = +qs.get("days") || 40;   // 40 天：涵蓋新進度結束（11/4）後積欠消化、首檢收尾
@@ -1693,15 +1709,18 @@ async function runSelftest() {
   check("(d) 拼錯的卡隔 ≥3 張真的卡且 ≥60 秒再出；提早出只在沒有任何一張到時間時、且不重出剛出過的同一張", !gapBad.length,
     gapBad.length ? gapBad.slice(0, 5).join("; ") : `提早出 ${earlyAlone} 次（都是其他卡也還在等）`);
   check("(e) 長期排程每字每天只評一次", !multiGrade);
+  DATA.focus = keepFocus;
   await syncSelftest(check, T);
   drillSelftest(check, T);
   daySelftest(check, T);
   await jhSelftest(check, T);
   const sim = jhSim(check, T);
+  const fsim = focusSelftest(check, T);
   if (!realJh) indexJh(DATA.jh && DATA.jh.items);
   out.push("\n逐日明細（張數／估計分／模擬分／作答次／首檢／加強卡／留到明天）：\n" +
     perDay.map((x) => `${x.day} ${x.set}張 估${x.est}分 實${x.min}分 答${x.ans} 首檢${x.fc} 加強${x.boosts} 留${x.backlog}${x.forced ? " ＊本批佔滿" : ""}`).join("\n"));
   out.push("\n國中字＋統測 30 天模擬（逐日）：\n" + sim.join("\n"));
+  if (fsim.length) out.push("\n月考衝刺模擬（真課表，逐日）：\n" + fsim.join("\n"));
   const pass = results.every(Boolean);
   out.unshift(pass ? `SELFTEST PASS（${results.length} 項）` : `SELFTEST FAIL（${results.filter((x) => !x).length}/${results.length} 項失敗）`);
   setHeader("selftest", pass ? "全部通過" : "有失敗", false);
@@ -1741,7 +1760,7 @@ async function jhSelftest(check, T) {
   check("國中字：上課日沒有國中字清單（新字輸入做完也不會冒出來）；隔天有",
     hadInput && j0 === null && j1 === null && !S.days[cb.date].jh && j2 && j2.set.length > 0, `${cb.date} 上課日；隔天 ${j2 && j2.set.length} 題`);
   // 首次檢測 ≤ 40、到期複習排前面、份量 ≤ 5 分鐘
-  const DAYX = "2026-11-20";
+  const DAYX = "2026-11-27";
   S = freshState(); t = T(DAYX); clock.t = t;
   const due5 = JH_LIST.slice(100, 105).map((i) => i.id);
   due5.forEach((id) => { S.cards[id] = { st: 5, df: 5, reps: 2, lapses: 0, last: t - 6 * DAY, due: t - DAY }; });
@@ -1886,7 +1905,7 @@ async function jhSelftest(check, T) {
     Fm.queue.some((e) => isJh(e.id)) && Fm.queue.some((e) => !isJh(e.id)) && !Fm.queue.some((e) => J.set.includes(e.id)), `混合 ${Fm.queue.filter((e) => isJh(e.id)).length}/${Fm.queue.length} 張國中字`);
   // 合併規則（純函式）
   const jd = (ans, passed) => ({ set: [], queue: [], ans, graded: {}, fails: {}, boosts: {}, passed, ms: ans * 5000 });
-  const A = freshState(), B = freshState(), d0 = "2026-11-20";
+  const A = freshState(), B = freshState(), d0 = "2026-11-27";
   A.days[d0] = Object.assign(blankDay(), { ans: 30, passed: true, ms: 9e5 });
   B.days[d0] = Object.assign(blankDay(), { ans: 2, ms: 1e4, jh: jd(15, true) });
   const m1 = mergeState(A, B), m2 = mergeState(B, A), pd = (diffState(A, B).days || {})[d0];
@@ -1896,8 +1915,8 @@ async function jhSelftest(check, T) {
   A.days[d0].jh = jd(40, false);
   check("同步／國中字合併：國中字也是過關 > 作答次數", mergeState(A, B).days[d0].jh.passed === true && mergeState(B, A).days[d0].jh.passed === true);
   check("同步／國中字合併：作答中那天整天留這台（隊伍物件不換）", mergeState(A, B, d0).days[d0] === A.days[d0]);
-  const cl = cleanState({ days: { [d0]: Object.assign(blankDay(), { ans: 3, jh: { set: "x" } }), "2026-11-21": Object.assign(blankDay(), { jh: jd(2, false) }) } });
-  check("同步／國中字：雲端資料清洗：國中字那份形狀不對只丟掉它，統測那天照留", cl.days[d0] && cl.days[d0].ans === 3 && !("jh" in cl.days[d0]) && cl.days["2026-11-21"].jh.ans === 2);
+  const cl = cleanState({ days: { [d0]: Object.assign(blankDay(), { ans: 3, jh: { set: "x" } }), "2026-11-28": Object.assign(blankDay(), { jh: jd(2, false) }) } });
+  check("同步／國中字：雲端資料清洗：國中字那份形狀不對只丟掉它，統測那天照留", cl.days[d0] && cl.days[d0].ans === 3 && !("jh" in cl.days[d0]) && cl.days["2026-11-28"].jh.ans === 2);
   // 老師端
   S = freshState(); t = T(DAYX); clock.t = t;
   J = todayJh(t); playAll(J, t, () => 0.8, rr, fast);
@@ -1929,6 +1948,10 @@ async function jhSelftest(check, T) {
 
 // 國中字＋統測一起跑：每天統測做完 → 國中字做完 → 總複習 10 張（統測範圍）
 function jhSim(check, T) {
+  const keepFocus = DATA.focus; DATA.focus = null;   // 測國中字軌道本身；月考暫停另測
+  try { return jhSimRun(check, T); } finally { DATA.focus = keepFocus; }
+}
+function jhSimRun(check, T) {
   S = freshState();
   const r3 = rng(777), r4 = rng(31337), START = "2026-10-03", N = +qs.get("jhdays") || 70, rows = [], per = [];
   let doneDay = null;
@@ -1980,6 +2003,50 @@ function jhSim(check, T) {
   check(`作答紀錄：「常忘」要看的 ${FORGOT_DAYS} 天作答量 ≤ 上限 ${LOG_CAP} 筆（統測＋國中字＋重排＋每天總複習 10 張）`, win <= LOG_CAP,
     `每天平均 ${avgLog.toFixed(0)} 筆、最多 ${Math.max(...logs)} 筆；任 ${FORGOT_DAYS} 天最多 ${win} 筆；${LOG_CAP} 筆約可存 ${Math.floor(LOG_CAP / avgLog)} 天`);
   return per.map((x) => `${x.day} ${x.cls ? "上課日（無國中字）" : `國中字 ${x.n}題 首檢${x.fc} 估${Math.round(x.est / 60 * 10) / 10}分 實${x.min.toFixed(1)}分 答${x.jAns}${x.jPass ? "" : " 未完"}`}｜統測答${x.mainAns}${x.mainPass ? "" : " 未過"}｜紀錄 ${x.logN} 筆`);
+}
+
+/* ---------- 月考衝刺 selftest（真課表：10/21–11/4 只練洩題字，11/5 起洩題字退場、統測＋國中字恢復） ---------- */
+function focusSelftest(check, T) {
+  const F = DATA.focus;
+  if (!F) return [];
+  S = freshState();
+  const r = rng(2026), rows = [], byDay = {};
+  // 先當作已經練過一陣子統測：已學的字都有卡、散在 10/15–11/10 到期（月考期間會到期卻不能排）
+  LEARNED.flatMap((b) => BANK_ITEMS[b]).forEach((it, k) => {
+    S.cards[it.id] = { st: 8, df: 5, reps: 3, lapses: 0, last: T("2026-10-10"), due: dayStart(addDays("2026-10-15", k % 27)) };
+  });
+  const mIds = (b) => BANK_ITEMS[b].map((i) => i.id);
+  const taught = (day) => SCHEDULE.filter((x) => F.banks.includes(x.bank) && x.date <= day).flatMap((x) => mIds(x.bank));
+  for (let day = "2026-10-20"; day <= "2026-11-08"; day = addDays(day, 1)) {
+    let t = T(day); clock.t = t;
+    const D = today(t), J = todayJh(t);
+    byDay[day] = { set: D.set.slice(), input: D.queue.filter((e) => e.k === "input").map((e) => e.id), J: !!J, est: D.est };
+    for (let g = 0; g < 3000; g++) {
+      const p = pick(D, t);
+      if (!p) break;
+      if (p.e.k !== "recall") { finishOther(D, p, t); t += COST[p.e.k] * 1000; clock.t = t; continue; }
+      const ok = r() < 0.8;
+      answerRecall(D, p, ok, ok ? 9000 : 12000, t);
+      t += 13000; clock.t = t;
+    }
+    byDay[day].passed = D.passed;
+    rows.push(`${day} ${D.set.length}張（月考 ${D.set.filter((id) => ITEMS[id].monthly).length}）估${Math.round(D.est / 60)}分 新字輸入${byDay[day].input.length}${J ? "" : "　國中字暫停/休息"}${D.passed ? "" : " 未過"}`);
+  }
+  const only = (day) => byDay[day].set.every((id) => ITEMS[id] && ITEMS[id].monthly);
+  const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+  check("月考衝刺：10/21 上課日只輸入月考① 新字", sameSet(byDay["2026-10-21"].input, mIds("m1")) && only("2026-10-21"));
+  check("月考衝刺：10/22 只有月考①（統測到期也不排）", sameSet(byDay["2026-10-22"].set, mIds("m1")));
+  check("月考衝刺：10/26 是月考①＋②（累積）", sameSet(byDay["2026-10-26"].set, mIds("m1").concat(mIds("m2"))));
+  check("月考衝刺：11/4 是月考①–④ 全部", sameSet(byDay["2026-11-04"].set, taught("2026-11-04")) && byDay["2026-11-04"].set.length === F.banks.reduce((n, b) => n + mIds(b).length, 0));
+  const inWin = Object.keys(byDay).filter((d) => d >= F.from && d <= F.to);
+  check("月考衝刺：期間每天只有月考字、國中字都暫停、每天都過得了關", inWin.every((d) => only(d) && !byDay[d].J && byDay[d].passed),
+    inWin.filter((d) => !only(d) || byDay[d].J || !byDay[d].passed).join(" "));
+  check("月考衝刺：11/5 起月考字退場、統測複習與國中字恢復", !byDay["2026-11-05"].set.some((id) => ITEMS[id].monthly) && byDay["2026-11-05"].set.length > 0 && byDay["2026-11-05"].J &&
+    !byDay["2026-11-06"].set.some((id) => ITEMS[id].monthly), `11/5 ${byDay["2026-11-05"].set.length} 張`);
+  check("月考衝刺：11/7 上課日輸入 U11上 新字", sameSet(byDay["2026-11-07"].input, mIds("u11_upper")));
+  check("月考衝刺：首頁與老師端單元名稱顯示「月考①」", bankName("m1") === "月考①" && bankName("u11_upper") === "U11上");
+  S = freshState();
+  return rows;
 }
 
 /* ---------- 老師端單元明細 selftest（假進度；截圖也用這份） ---------- */
@@ -2386,7 +2453,7 @@ async function syncSelftest(check, T) {
   const jA = mkDev(), jB = mkDev();
   jA.sync.setToken(TK4); await jA.sync.pull();
   jB.sync.setToken(TK4); await jB.sync.pull();
-  const J1 = "2026-11-20", J2 = "2026-11-21", J3 = "2026-11-22";
+  const J1 = "2026-11-27", J2 = "2026-11-28", J3 = "2026-11-29";   // 要在課表之後（11/21 前有上課日，國中字會休息）
   // (1) A 先做統測並上傳；B 再做國中字並上傳（被擋 → 合併 → 重送）
   playDev(jA, J1, 30, 0.8, "19:00"); await jA.sync.push();
   playJh(jB, J1, 20, "20:00"); await jB.sync.push();
@@ -2422,7 +2489,7 @@ async function syncSelftest(check, T) {
   // (4) 真實流程（App 本身的 S、keepDay＝作答中、sessionDone）：A 統測作答中，B 做完國中字並上傳；A 作答中自動上傳時被擋→合併（整天留 A 的）；
   //     A 做完統測回首頁 → 不能排出一份新的國中字清單（B 已經做過了），測試端不手動下載
   {
-    const TK5 = "55555555555555555555555555555555", JD = "2026-11-25";
+    const TK5 = "55555555555555555555555555555555", JD = "2026-11-30";
     srv.add(TK5, "作答中合併");
     const keepS = S, keepSync = sync;
     let gMeta = null;
