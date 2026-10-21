@@ -1056,7 +1056,7 @@ function renderJrec(pk) {
 function freePicker() {
   setHeader("總複習", "選範圍（不影響今天的過關）", true);
   const day = dayOf(now());
-  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.date <= day).map((b) => b.bank));
+  const banks = LEARNED.concat(SCHEDULE.filter((b) => b.date <= day && !retired(b.bank, day)).map((b) => b.bank));
   main.innerHTML = `<div class="card">
     <div class="lbl">範圍</div>
     <label class="bank"><input type="checkbox" id="all" checked> 全選</label>
