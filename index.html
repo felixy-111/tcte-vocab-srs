@@ -953,18 +953,23 @@ function renderRecog(pk) {
     <div class="word mt">${esc(it.en)}</div>
     <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
     <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join("")}</div>
+    <button class="btn ghost mt" id="idk" style="width:100%">我不會（看答案）</button>
     <div id="fb"></div></div>`;
   play(it.audio);
   let done = false;
-  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => {
+  // 我不會＝當作選錯（太一 2026-11-11：四選一學生會用猜的）
+  const choose = (btn) => {
     if (done) return; done = true;
-    const ok = opts[+btn.dataset.i] === it.zh;
+    const ok = !!btn && opts[+btn.dataset.i] === it.zh;
+    $("idk").remove();
     main.querySelectorAll(".opt").forEach((b) => { if (opts[+b.dataset.i] === it.zh) b.classList.add("correct"); });
-    if (!ok) btn.classList.add("wrong");
+    if (btn && !ok) btn.classList.add("wrong");
     finishOther(session.Q, pk, now());
     if (ok) setTimeout(() => { if (session) nextCard(); }, 700);
     else { $("fb").innerHTML = `<button class="btn mt" id="nx">下一張</button>`; $("nx").onclick = nextCard; }
-  });
+  };
+  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => choose(btn));
+  $("idk").onclick = () => choose(null);
 }
 
 // 每日主卡：中→英拼寫。打字一定在翻面之前；送出才翻面
@@ -1033,12 +1038,14 @@ function renderJrec(pk) {
     <div class="word mt">${esc(it.en)}</div>
     <div class="center mt">${playBtn(it.audio)}</div>
     <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}">${esc(o)}</button>`).join("")}</div>
+    <button class="btn ghost mt" id="idk" style="width:100%">我不會（看答案）</button>
     <div id="fb"></div></div>`;
   play(it.audio);
   let done = false;
-  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => {
+  const choose = (btn) => {   // btn＝null：我不會，當作選錯
     if (done) return; done = true;
-    const ms = performance.now() - t0, ok = opts[+btn.dataset.i] === it.zh, Q = session.Q;
+    const ms = performance.now() - t0, ok = !!btn && opts[+btn.dataset.i] === it.zh, Q = session.Q;
+    $("idk").remove();
     const g = answerRecall(Q, pk, ok, ms, now());
     main.querySelectorAll(".opt").forEach((b) => { b.disabled = true; if (opts[+b.dataset.i] === it.zh) b.classList.add("correct"); });
     const label = `${GRADE_TXT[g]}${g === 1 ? "" : `・${secTxt(ms)}`}`;
@@ -1047,14 +1054,16 @@ function renderJrec(pk) {
       setTimeout(() => { if (session && session.Q === Q && main.querySelector(".q") && main.querySelector(".q").dataset.id === e.id) nextCard(); }, 800);
       return;
     }
-    btn.classList.add("wrong");
+    if (btn) btn.classList.add("wrong");
     $("fb").innerHTML = `<div class="mt"><span class="grade g${g}">${label}</span></div>
       <div class="word mt" style="font-size:28px">${esc(it.en)}</div>
       <div class="pos">${esc(it.pos)}　${playBtn(it.audio)}</div>
       <div class="zhbig" style="font-size:20px">${esc(it.zh)}</div>
       <button class="btn mt" id="nx">下一張</button>`;
     $("nx").onclick = nextCard;
-  });
+  };
+  main.querySelectorAll(".opt").forEach((btn) => btn.onclick = () => choose(btn));
+  $("idk").onclick = () => choose(null);
 }
 
 /* ---------- 總複習選範圍 ---------- */
@@ -2070,6 +2079,17 @@ function focusSelftest(check, T) {
     freePicker();
     const u11box = main.querySelector('.bk[value="u11_upper"]'), u10box = main.querySelector('.bk[value="u10_lower"]');
     const Fu11 = buildFree(new Set(["u11_upper"]), 20, t);
+    {  // 四選一的「我不會」＝選錯：秀正解、不自動下一張；國中字要評「重來」
+      const mk = (id, k) => ({ set: [id], queue: [{ id, k, after: 0, t: 0 }], ans: 0, real: 0, graded: {}, fails: {}, boosts: {}, passed: false, ms: 0, lastAct: 0 });
+      let Q = mk(u11[0], "recog"); session = { Q, kind: "daily", n: 0 };
+      renderRecog({ e: Q.queue[0], i: 0 }); $("idk").click();
+      check("新字認得：按「我不會」→ 秀正解＋下一張鈕、不算選對", !$("idk") && main.querySelectorAll(".opt.correct").length === 1 && !main.querySelector(".opt.wrong") && !!$("nx") && !Q.queue.length);
+      const jid = JH_LIST[0].id;
+      Q = mk(jid, "jrec"); session = { Q, kind: "jh", n: 0 };
+      renderJrec({ e: Q.queue[0], i: 0 }); $("idk").click();
+      check("國中字認得：按「我不會」→ 評重來、秀正解", !$("idk") && !!main.querySelector(".grade.g1") && main.querySelectorAll(".opt.correct").length === 1 && !!$("nx") && !!S.cards[jid]);
+      session = null;
+    }
     check("總複習：本批整個在今日任務裡 → 標「今日任務中」不能勾、其他單元照常可勾", u11box && u11box.disabled && !u11box.checked && u10box && !u10box.disabled && Fu11.queue.length === 0);
   }
   check("月考衝刺：首頁與老師端單元名稱顯示「月考①」", bankName("m1") === "月考①" && bankName("u11_upper") === "U11上");
