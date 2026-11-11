@@ -546,7 +546,8 @@ function buildDay(day) {
   });
   D.forcedEst = D.est;
   // 上課日（本批第一次輸入新字）只做新字，舊字留到明天（太一 2026-10-03 拍板）
-  if (D.queue.some((e) => e.k === "input")) { S.days[day] = D; save(); return D; }
+  // 課表上的上課日也算（太一 2026-11-11：11/7 停課但學生在 App 先做過 U11上新字，11/11 上課不能混舊字）
+  if (D.queue.some((e) => e.k === "input") || (b && b.date === day)) { S.days[day] = D; save(); return D; }
   // 月考衝刺：已教過的月考批全部每天拼一次（強制、不受份量上限），其他都不排
   if (inFocus(day)) {
     SCHEDULE.filter((x) => DATA.focus.banks.includes(x.bank) && x.date <= day).forEach((x) => BANK_ITEMS[x.bank].forEach((it) => {
@@ -578,7 +579,11 @@ function buildDay(day) {
   return D;
 }
 // 課表改過（2026-10-14 九下改十上）：今天已用舊課表排了別批的新字、還沒作答 → 照新課表重排
-const staleDay = (D, day) => D.ans === 0 && D.queue.some((e) => e.k === "input" && (ITEMS[e.id] || {}).bank !== (curBatch(day) || {}).bank);
+const staleDay = (D, day) => {
+  const b = curBatch(day);
+  if (b && b.date === day && D.set.some((id) => (ITEMS[id] || {}).bank !== b.bank)) return true;   // 上課日清單混了別批的字（不論是否作答過）
+  return D.ans === 0 && D.queue.some((e) => e.k === "input" && (ITEMS[e.id] || {}).bank !== (b || {}).bank);
+};
 const today = (t) => { const d = dayOf(t), D = S.days[d]; return D && !staleDay(D, d) ? D : buildDay(d); };
 
 /* ============================================================
@@ -587,7 +592,7 @@ const today = (t) => { const d = dayOf(t), D = S.days[d]; return D && !staleDay(
    - 到期複習先（記憶率最低的先），再來沒見過的字（官方字表順序，每天 ≤ 40）
    - 認得卡＝英→中四選一；最近 30 天有 2 天以上第一次就錯（＝常忘）→ 改考拼寫
    ============================================================ */
-const isClassDay = (D, day, st = S) => D.queue.some((e) => e.k === "input") || D.set.some((id) => st.intro[id] && dayOf(st.intro[id]) === day);
+const isClassDay = (D, day, st = S) => D.queue.some((e) => e.k === "input") || SCHEDULE.some((b) => b.date === day && BANK_ITEMS[b.bank]) || D.set.some((id) => st.intro[id] && dayOf(st.intro[id]) === day);
 function buildJh(day, D, t, budget = JH_BUDGET_SEC) {   // budget：selftest 測首檢上限用
   const J = { set: [], queue: [], ans: 0, graded: {}, fails: {}, boosts: {}, passed: false, passedAt: 0, ms: 0, lastAct: 0, est: 0, fc: 0 };
   const forgot = forgotCounts(S.log, t), t0 = dayStart(day), t1 = dayStart(addDays(day, 1));
@@ -2045,6 +2050,19 @@ function focusSelftest(check, T) {
     !byDay["2026-11-06"].set.some((id) => ITEMS[id].monthly), `11/5 ${byDay["2026-11-05"].set.length} 張`);
   check("11/7 停課：當天不輸入新字，U11上延到 11/11", byDay["2026-11-07"].input.length === 0);
   check("11/11 上課日輸入 U11上 新字", sameSet(byDay["2026-11-11"].input, mIds("u11_upper")));
+  {  // 11/7 停課但學生在 App 先做過 U11上 新字 → 11/11 上課日仍只出 U11上；已排好混舊字的清單要重排
+    S = freshState();
+    const u11 = mIds("u11_upper"), old = mIds("u10_lower");
+    u11.forEach((id) => { S.intro[id] = T("2026-11-07"); S.cards[id] = { st: 2, df: 5, reps: 1, lapses: 0, last: T("2026-11-07"), due: dayStart("2026-11-09") }; });
+    old.forEach((id) => { S.cards[id] = { st: 5, df: 5, reps: 2, lapses: 0, last: T("2026-10-25"), due: dayStart("2026-11-10") }; });
+    const t = T("2026-11-11"); clock.t = t;
+    const D1 = buildDay("2026-11-11");
+    check("11/11 上課日：U11上 先做過也只出 U11上、不混舊字", sameSet(D1.set, u11), `${D1.set.length} 張`);
+    S.days["2026-11-11"] = Object.assign({}, D1, { set: D1.set.concat(old[0]), ans: 3 });
+    const D2 = today(t);
+    check("11/11 上課日：已排好混了舊字的清單會重排", sameSet(D2.set, u11));
+    check("11/11 上課日：國中字休息", isClassDay(D2, "2026-11-11"));
+  }
   check("月考衝刺：首頁與老師端單元名稱顯示「月考①」", bankName("m1") === "月考①" && bankName("u11_upper") === "U11上");
   S = freshState();
   return rows;
