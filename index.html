@@ -1062,22 +1062,27 @@ function freePicker() {
   setHeader("總複習", "選範圍（不影響今天的過關）", true);
   const day = dayOf(now());
   const banks = LEARNED.concat(SCHEDULE.filter((b) => b.date <= day && !retired(b.bank, day)).map((b) => b.bank));
+  // 整個單元都在今天的任務清單裡（本批）→ 總複習抽不到，標出來不給勾（太一 2026-11-11：學生勾 U11上 秒跳「練完了」）
+  const D = today(now()), busy = (b) => BANK_ITEMS[b].every((i) => D.set.includes(i.id));
   main.innerHTML = `<div class="card">
     <div class="lbl">範圍</div>
     <label class="bank"><input type="checkbox" id="all" checked> 全選</label>
     ${banks.map((b) => {
       const its = BANK_ITEMS[b], s = its.filter((i) => seen(i.id)).length;
+      if (busy(b)) return `<label class="bank mut"><input type="checkbox" class="bk" value="${b}" disabled> ${bankName(b)}<span class="r">今日任務中</span></label>`;
       return `<label class="bank"><input type="checkbox" class="bk" value="${b}" checked> ${bankName(b)}<span class="r">${s}/${its.length} 已練</span></label>`;
     }).join("")}
     ${JH_LIST.length ? `<label class="bank" style="margin-top:6px"><input type="checkbox" id="jhChk"> 國中基本字<span class="r">${JH_LIST.filter((i) => seen(i.id)).length}/${JH_LIST.length} 已練</span></label>` : ""}
     <div class="lbl mt">張數</div>
     <div class="row2"><button class="btn ghost sz" data-n="10">10 張</button><button class="btn sz" data-n="20">20 張</button></div>
   </div>`;
-  $("all").onchange = (e) => main.querySelectorAll(".bk").forEach((c) => c.checked = e.target.checked);
+  $("all").onchange = (e) => main.querySelectorAll(".bk:not(:disabled)").forEach((c) => c.checked = e.target.checked);
   main.querySelectorAll(".sz").forEach((b) => b.onclick = () => {
     const sel = new Set([...main.querySelectorAll(".bk:checked")].map((c) => c.value)), jh = !!($("jhChk") && $("jhChk").checked);
     if (!sel.size && !jh) return toast("至少選一個範圍");
-    startSession(buildFree(sel, +b.dataset.n, now(), jh), "free");
+    const Q = buildFree(sel, +b.dataset.n, now(), jh);
+    if (!Q.queue.length) return toast("選的範圍裡的字都在今日任務裡，先做今日任務");
+    startSession(Q, "free");
   });
 }
 
@@ -2062,6 +2067,10 @@ function focusSelftest(check, T) {
     const D2 = today(t);
     check("11/11 上課日：已排好混了舊字的清單會重排", sameSet(D2.set, u11));
     check("11/11 上課日：國中字休息", isClassDay(D2, "2026-11-11"));
+    freePicker();
+    const u11box = main.querySelector('.bk[value="u11_upper"]'), u10box = main.querySelector('.bk[value="u10_lower"]');
+    const Fu11 = buildFree(new Set(["u11_upper"]), 20, t);
+    check("總複習：本批整個在今日任務裡 → 標「今日任務中」不能勾、其他單元照常可勾", u11box && u11box.disabled && !u11box.checked && u10box && !u10box.disabled && Fu11.queue.length === 0);
   }
   check("月考衝刺：首頁與老師端單元名稱顯示「月考①」", bankName("m1") === "月考①" && bankName("u11_upper") === "U11上");
   S = freshState();
