@@ -2017,7 +2017,7 @@ function focusSelftest(check, T) {
   });
   const mIds = (b) => BANK_ITEMS[b].map((i) => i.id);
   const taught = (day) => SCHEDULE.filter((x) => F.banks.includes(x.bank) && x.date <= day).flatMap((x) => mIds(x.bank));
-  for (let day = "2026-10-20"; day <= "2026-11-08"; day = addDays(day, 1)) {
+  for (let day = "2026-10-20"; day <= "2026-11-12"; day = addDays(day, 1)) {
     let t = T(day); clock.t = t;
     const D = today(t), J = todayJh(t);
     byDay[day] = { set: D.set.slice(), input: D.queue.filter((e) => e.k === "input").map((e) => e.id), J: !!J, est: D.est };
@@ -2043,7 +2043,8 @@ function focusSelftest(check, T) {
     inWin.filter((d) => !only(d) || byDay[d].J || !byDay[d].passed).join(" "));
   check("月考衝刺：11/5 起月考字退場、統測複習與國中字恢復", !byDay["2026-11-05"].set.some((id) => ITEMS[id].monthly) && byDay["2026-11-05"].set.length > 0 && byDay["2026-11-05"].J &&
     !byDay["2026-11-06"].set.some((id) => ITEMS[id].monthly), `11/5 ${byDay["2026-11-05"].set.length} 張`);
-  check("月考衝刺：11/7 上課日輸入 U11上 新字", sameSet(byDay["2026-11-07"].input, mIds("u11_upper")));
+  check("11/7 停課：當天不輸入新字，U11上延到 11/11", byDay["2026-11-07"].input.length === 0);
+  check("11/11 上課日輸入 U11上 新字", sameSet(byDay["2026-11-11"].input, mIds("u11_upper")));
   check("月考衝刺：首頁與老師端單元名稱顯示「月考①」", bankName("m1") === "月考①" && bankName("u11_upper") === "U11上");
   S = freshState();
   return rows;
