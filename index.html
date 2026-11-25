@@ -140,7 +140,7 @@
    常數
    ============================================================ */
 const STORE_KEY = "tsvt-srs-v2";
-const EXAM_DATE = "2027-04-24";      // 統測日期（簡章公告後改這裡）
+const EXAM_DATE = "2028-04-29";      // 117 學年度統測（學生 2026 年高二）；依往年四月最後週六推估，簡章公告後改這裡
 const SWEEP_DAYS = 42;               // 考前 6 週：每張卡至少到期一次
 const MAX_IVL = 45;                  // 最大間隔（天）
 const RETENTION = 0.9;
@@ -1543,11 +1543,11 @@ async function runSelftest() {
   S.cards.big = { st: 500, df: 3, reps: 9, lapses: 0, last: t0 - 40 * DAY, due: t0 };
   review("big", 3, t0);
   check("最大間隔 45 天", S.cards.big.due <= dayStart(addDays("2026-10-03", MAX_IVL)));
-  const tm = T("2027-03-01");
+  const tm = T("2028-03-01");
   S.cards.sw = { st: 300, df: 3, reps: 9, lapses: 0, last: tm - 40 * DAY, due: tm };
   review("sw", 3, tm);
   check("考前總掃：3/1 複習的卡會在考前 6 週內到期", dayOf(S.cards.sw.due) >= SWEEP_START && dayOf(S.cards.sw.due) < EXAM_DATE, dayOf(S.cards.sw.due));
-  const tw = T("2027-04-10");
+  const tw = T("2028-04-15");
   S.cards.sw2 = { st: 300, df: 3, reps: 9, lapses: 0, last: tw - 40 * DAY, due: tw };
   review("sw2", 3, tw);
   check("總掃期間的卡在考前到期", dayOf(S.cards.sw2.due) < EXAM_DATE, dayOf(S.cards.sw2.due));
@@ -1814,7 +1814,7 @@ async function jhSelftest(check, T) {
     daysBetween(DAYX, dayOf(S.cards[f1].due)) === JH_MAX_IVL && daysBetween(DAYX, dayOf(S.cards[J.set[2]].due)) === JH_MAX_IVL &&
     daysBetween(DAYX, dayOf(S.cards[f2].due)) === Math.round(fsrs.ivl(fsrs.initS(4))), `4.001 秒 → ${dayOf(S.cards[f2].due)}`);
   // 國中字不吃考前總掃、上限 90；統測照舊（上限 45＋考前總掃）
-  const tx = T("2027-03-01");
+  const tx = T("2028-03-01");
   S.cards["jh:sweep"] = { st: 400, df: 3, reps: 9, lapses: 0, last: tx - 60 * DAY, due: tx };
   review("jh:sweep", 3, tx);
   S.cards["mainsw"] = { st: 400, df: 3, reps: 9, lapses: 0, last: tx - 60 * DAY, due: tx };
@@ -1822,7 +1822,7 @@ async function jhSelftest(check, T) {
   S.cards["jh:big"] = { st: 5000, df: 3, reps: 9, lapses: 0, last: T("2026-10-03") - 60 * DAY, due: 0 };
   review("jh:big", 3, T("2026-10-03"));
   check(`國中字：不拉進考前總掃、上限 ${JH_MAX_IVL} 天；統測卡照舊（上限 ${MAX_IVL} 天＋考前總掃）`,
-    dayOf(S.cards["jh:sweep"].due) === addDays("2027-03-01", JH_MAX_IVL) && dayOf(S.cards["jh:sweep"].due) > EXAM_DATE &&
+    dayOf(S.cards["jh:sweep"].due) === addDays("2028-03-01", JH_MAX_IVL) && dayOf(S.cards["jh:sweep"].due) > EXAM_DATE &&
     dayOf(S.cards.mainsw.due) >= SWEEP_START && dayOf(S.cards.mainsw.due) < EXAM_DATE && dayOf(S.cards["jh:big"].due) === addDays("2026-10-03", JH_MAX_IVL),
     `國中字 3/1 → ${dayOf(S.cards["jh:sweep"].due)}；統測 3/1 → ${dayOf(S.cards.mainsw.due)}`);
   // 畫面：選對自動下一張（不用按）、選錯翻面＋下一張、錯的照規則重排、全部做完才完成
